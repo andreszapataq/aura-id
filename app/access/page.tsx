@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import * as faceapi from "face-api.js"
-import { storage } from "@/lib/storage"
+import { supabase } from "@/lib/supabase"
 
 export default function Access() {
   const [message, setMessage] = useState("")
@@ -37,12 +37,19 @@ export default function Access() {
       if (detections) {
         const faceDescriptor = detections.descriptor
 
-        const employees = storage.getEmployees()
+        // Fetch all employees from Supabase
+        const { data: employees, error } = await supabase.from("employees").select("*")
+
+        if (error) {
+          console.error("Error fetching employees:", error)
+          setMessage("An error occurred. Please try again.")
+          return
+        }
 
         // Compare face with stored employee faces
         let matchedEmployee = null
         for (const employee of employees) {
-          const storedDescriptor = new Float32Array(Object.values(JSON.parse(employee.faceData)))
+          const storedDescriptor = new Float32Array(Object.values(JSON.parse(employee.face_data)))
           const distance = faceapi.euclideanDistance(faceDescriptor, storedDescriptor)
           if (distance < 0.6) {
             // Adjust this threshold as needed
@@ -53,26 +60,28 @@ export default function Access() {
 
         if (matchedEmployee) {
           const now = new Date()
-          const newLog = {
-            id: Date.now().toString(),
-            employeeId: matchedEmployee.id,
+          const { error } = await supabase.from("access_logs").insert({
+            employee_id: matchedEmployee.id,
             timestamp: now.toISOString(),
-            type: "check_in" as const, // You might want to determine if it's check-in or check-out based on the last log
+            type: "check_in", // You might want to determine if it's check-in or check-out based on the last log
+          })
+
+          if (error) {
+            console.error("Error logging access:", error)
+            setMessage("An error occurred. Please try again.")
+          } else {
+            const motivationalMessages = [
+              "Have a great day ahead!",
+              "Your positive attitude can make a difference!",
+              "Believe you can and you're halfway there!",
+              "Make today amazing!",
+              "You're capable of amazing things!",
+            ]
+
+            const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)]
+
+            setMessage(`Welcome, ${matchedEmployee.name}! ${randomMessage}`)
           }
-
-          storage.addAccessLog(newLog)
-
-          const motivationalMessages = [
-            "Have a great day ahead!",
-            "Your positive attitude can make a difference!",
-            "Believe you can and you're halfway there!",
-            "Make today amazing!",
-            "You're capable of amazing things!",
-          ]
-
-          const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)]
-
-          setMessage(`Welcome, ${matchedEmployee.name}! ${randomMessage}`)
         } else {
           setMessage("Face not recognized. Please try again or contact an administrator.")
         }

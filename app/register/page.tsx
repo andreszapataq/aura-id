@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import * as faceapi from "face-api.js"
-import { storage } from "@/lib/storage"
+import { supabase } from "@/lib/supabase"
 
 export default function Register() {
   const [name, setName] = useState("")
@@ -54,14 +54,13 @@ export default function Register() {
         throw new Error("No face image captured")
       }
 
-      const newEmployee = {
-        id: Date.now().toString(),
+      const { error } = await supabase.from("employees").insert({
         name,
-        employeeId,
-        faceData: capturedImage,
-      }
+        employee_id: employeeId,
+        face_data: capturedImage,
+      })
 
-      storage.addEmployee(newEmployee)
+      if (error) throw error
 
       alert("Employee registered successfully!")
       // Reset form

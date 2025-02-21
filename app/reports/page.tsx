@@ -3,12 +3,28 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { storage } from "@/lib/storage"
+import { supabase } from "@/lib/supabase"
+
+interface ReportEntry {
+  name: string
+  employeeId: string
+  checkIn: string
+  type: string
+}
+
+interface LogEntry {
+  employees?: {
+    name?: string
+    employee_id?: string
+  }
+  timestamp: string
+  type: string
+}
 
 export default function Reports() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
-  const [reportData, setReportData] = useState<any[]>([])
+  const [reportData, setReportData] = useState<ReportEntry[]>([])
 
   useEffect(() => {
     // Set default date range to last 7 days
@@ -19,27 +35,31 @@ export default function Reports() {
     setStartDate(start.toISOString().split("T")[0])
   }, [])
 
-  function generateReport(e: React.FormEvent) {
+  async function generateReport(e: React.FormEvent) {
     e.preventDefault()
-    const logs = storage.getAccessLogs()
-    const employees = storage.getEmployees()
 
-    const filteredLogs = logs.filter((log) => {
-      const logDate = new Date(log.timestamp)
-      return logDate >= new Date(startDate) && logDate <= new Date(endDate)
-    })
+    try {
+      const { data: logs, error: logsError } = await supabase
+        .from("access_logs")
+        .select("*, employees(name, employee_id)")
+        .gte("timestamp", startDate)
+        .lte("timestamp", endDate)
+        .order("timestamp", { ascending: true })
 
-    const reportData = filteredLogs.map((log) => {
-      const employee = employees.find((emp) => emp.id === log.employeeId)
-      return {
-        name: employee ? employee.name : "Unknown",
-        employeeId: employee ? employee.employeeId : "Unknown",
+      if (logsError) throw logsError
+
+      const reportData = logs.map((log: LogEntry) => ({
+        name: log.employees?.name || "Unknown",
+        employeeId: log.employees?.employee_id || "Unknown",
         checkIn: new Date(log.timestamp).toLocaleString(),
         type: log.type,
-      }
-    })
+      }))
 
-    setReportData(reportData)
+      setReportData(reportData)
+    } catch (error) {
+      console.error("Error generating report:", error)
+      alert("Failed to generate report. Please try again.")
+    }
   }
 
   return (
