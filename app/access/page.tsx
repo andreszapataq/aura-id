@@ -14,9 +14,9 @@ export default function Access() {
   }, [])
 
   async function loadModels() {
-    await faceapi.nets.tinyFaceDetector.loadFromUri("/models")
-    await faceapi.nets.faceLandmark68Net.loadFromUri("/models")
-    await faceapi.nets.faceRecognitionNet.loadFromUri("/models")
+    await faceapi.nets.tinyFaceDetector.loadFromUri('/models/tiny_face_detector')
+    await faceapi.nets.faceLandmark68Net.loadFromUri('/models/face_landmark_68')
+    await faceapi.nets.faceRecognitionNet.loadFromUri('/models/face_recognition')
   }
 
   async function startVideo() {

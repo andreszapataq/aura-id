@@ -12,48 +12,114 @@ export default function Register() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    loadModels()
-  }, [])
+    let stream: MediaStream | null = null;
+    const videoElement = videoRef.current;
+
+    const initialize = async () => {
+      try {
+        await loadModels();
+        stream = await startVideo();
+      } catch (error) {
+        console.error("Initialization error:", error);
+      }
+    };
+
+    initialize();
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (videoElement) {
+        videoElement.srcObject = null;
+      }
+    };
+  }, []);
 
   async function loadModels() {
-    await faceapi.nets.tinyFaceDetector.loadFromUri("/models")
-    await faceapi.nets.faceLandmark68Net.loadFromUri("/models")
-    await faceapi.nets.faceRecognitionNet.loadFromUri("/models")
+    try {
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri('/models/tiny_face_detector'),
+        faceapi.nets.faceLandmark68Net.loadFromUri('/models/face_landmark_68'),
+        faceapi.nets.faceRecognitionNet.loadFromUri('/models/face_recognition')
+      ]);
+      setIsLoading(false);
+      console.log('Modelos cargados');
+    } catch (error) {
+      setIsLoading(false);
+      console.error('Error modelos:', error);
+    }
   }
 
-  async function startVideo() {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+  async function startVideo(): Promise<MediaStream> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+      
       if (videoRef.current) {
-        videoRef.current.srcObject = stream
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(error => {
+          if (error.name !== 'AbortError') {
+            throw error;
+          }
+        });
       }
+      return stream;
+    } catch (error) {
+      console.error("Camera error:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      setCameraError(errorMessage);
+      throw error;
     }
   }
 
   async function captureImage() {
-    if (videoRef.current && canvasRef.current) {
-      const detections = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-      if (detections) {
-        const canvas = canvasRef.current
-        const displaySize = { width: videoRef.current.width, height: videoRef.current.height }
-        faceapi.matchDimensions(canvas, displaySize)
-        canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
-        setCapturedImage(canvas.toDataURL())
-      } else {
-        alert("No face detected. Please try again.")
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    try {
+      const detections = await faceapi.detectSingleFace(
+        videoRef.current,
+        new faceapi.TinyFaceDetectorOptions()
+      ).withFaceLandmarks();
+
+      if (!detections) {
+        throw new Error("No se detectó un rostro. Por favor intenta de nuevo");
       }
+
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      
+      // Asegurar dimensiones correctas
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      setCapturedImage(canvas.toDataURL());
+      
+    } catch (error) {
+      console.error("Capture error:", error);
+      alert(error instanceof Error ? error.message : "Error al capturar imagen");
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    try {
-      if (!capturedImage) {
-        throw new Error("No face image captured")
-      }
+    e.preventDefault();
+    
+    if (!capturedImage) {
+      alert("⚠️ Primero captura una imagen con el botón 'Capture Image'");
+      return;
+    }
 
+    try {
       const { error } = await supabase.from("employees").insert({
         name,
         employee_id: employeeId,
@@ -68,8 +134,8 @@ export default function Register() {
       setEmployeeId("")
       setCapturedImage(null)
     } catch (error) {
-      console.error("Error registering employee:", error)
-      alert("Failed to register employee. Please try again.")
+      console.error("Error:", error);
+      alert(error instanceof Error ? error.message : "Error desconocido");
     }
   }
 
@@ -116,29 +182,44 @@ export default function Register() {
           <div className="relative">
             <video ref={videoRef} width="400" height="300" autoPlay muted className="rounded-lg" />
             <canvas ref={canvasRef} width="400" height="300" className="absolute top-0 left-0" />
+            {cameraError && (
+              <div className="absolute inset-0 bg-red-100/80 flex items-center justify-center p-4 text-center">
+                <p className="text-red-600 font-medium">{cameraError}</p>
+              </div>
+            )}
           </div>
           <div>
             <button
               type="button"
               onClick={captureImage}
-              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
+              className={`w-full text-white font-bold py-2 px-4 rounded ${
+                isLoading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-green-500 hover:bg-green-600'
+              }`}
+              disabled={isLoading}
             >
-              Capture Image
+              {isLoading ? 'Cargando modelos...' : 'Capturar Imagen'}
             </button>
           </div>
           {capturedImage && (
             <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={capturedImage || "/placeholder.svg"} alt="Captured face" className="mt-4 rounded-lg" />
             </div>
           )}
           <div>
             <button
               type="submit"
-              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded"
+              className={`w-full bg-indigo-500 text-white font-bold py-2 px-4 rounded ${
+                !capturedImage ? "opacity-50 cursor-not-allowed" : "hover:bg-indigo-600"
+              }`}
+              disabled={!capturedImage}
             >
-              Register Employee
+              Registrar Empleado
             </button>
           </div>
+          {isLoading && <p>Cargando modelos de detección facial...</p>}
         </form>
       </div>
     </div>
