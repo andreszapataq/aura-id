@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.750.0",
     "@supabase/supabase-js": "^2.48.1",
     "face-api.js": "^0.22.2",
     "next": "15.1.7",

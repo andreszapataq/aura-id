@@ -1,23 +1,12 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import * as faceapi from "face-api.js"
+import { useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 
 export default function Access() {
   const [message, setMessage] = useState("")
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    loadModels()
-  }, [])
-
-  async function loadModels() {
-    await faceapi.nets.tinyFaceDetector.loadFromUri('/models/tiny_face_detector')
-    await faceapi.nets.faceLandmark68Net.loadFromUri('/models/face_landmark_68')
-    await faceapi.nets.faceRecognitionNet.loadFromUri('/models/face_recognition')
-  }
 
   async function startVideo() {
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -30,63 +19,68 @@ export default function Access() {
 
   async function recognizeFace() {
     if (videoRef.current && canvasRef.current) {
-      const detections = await faceapi
-        .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks()
-        .withFaceDescriptor()
-      if (detections) {
-        const faceDescriptor = detections.descriptor
+      const canvas = canvasRef.current
+      canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+      const imageData = canvas.toDataURL()
 
-        // Fetch all employees from Supabase
-        const { data: employees, error } = await supabase.from("employees").select("*")
+      try {
+        const searchResponse = await fetch('/api/search-face', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ imageData }),
+        });
 
-        if (error) {
-          console.error("Error fetching employees:", error)
-          setMessage("An error occurred. Please try again.")
-          return
+        const searchData = await searchResponse.json();
+
+        if (!searchResponse.ok) {
+          throw new Error(searchData.error || 'Failed to search face');
         }
 
-        // Compare face with stored employee faces
-        let matchedEmployee = null
-        for (const employee of employees) {
-          const storedDescriptor = new Float32Array(Object.values(JSON.parse(employee.face_data)))
-          const distance = faceapi.euclideanDistance(faceDescriptor, storedDescriptor)
-          if (distance < 0.6) {
-            // Adjust this threshold as needed
-            matchedEmployee = employee
-            break
-          }
+        if (searchData.status === 'FACE_NOT_FOUND') {
+          setMessage("No estás registrado en el sistema. Por favor, contacta a RRHH para registrarte.");
+          return;
         }
 
-        if (matchedEmployee) {
-          const now = new Date()
-          const { error } = await supabase.from("access_logs").insert({
-            employee_id: matchedEmployee.id,
-            timestamp: now.toISOString(),
-            type: "check_in", // You might want to determine if it's check-in or check-out based on the last log
-          })
+        if (searchData.faceId) {
+          // Fetch employee data from Supabase
+          const { data: employees, error } = await supabase
+            .from("employees")
+            .select("*")
+            .eq("face_data", searchData.faceId)
+            .single()
 
-          if (error) {
-            console.error("Error logging access:", error)
-            setMessage("An error occurred. Please try again.")
-          } else {
+          if (error) throw error
+
+          if (employees) {
+            const now = new Date()
+            const { error: logError } = await supabase.from("access_logs").insert({
+              employee_id: employees.id,
+              timestamp: now.toISOString(),
+              type: "check_in",
+            })
+
+            if (logError) throw logError
+
             const motivationalMessages = [
-              "Have a great day ahead!",
-              "Your positive attitude can make a difference!",
-              "Believe you can and you're halfway there!",
-              "Make today amazing!",
-              "You're capable of amazing things!",
+              "¡Que tengas un excelente día!",
+              "¡Tu actitud positiva hace la diferencia!",
+              "¡Cree en ti mismo y estarás a medio camino!",
+              "¡Haz de hoy un día increíble!",
+              "¡Eres capaz de cosas extraordinarias!",
             ]
 
             const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)]
 
-            setMessage(`Welcome, ${matchedEmployee.name}! ${randomMessage}`)
+            setMessage(`¡Bienvenido, ${employees.name}! ${randomMessage}`)
+          } else {
+            setMessage("Empleado no encontrado. Por favor, contacta a un administrador.")
           }
-        } else {
-          setMessage("Face not recognized. Please try again or contact an administrator.")
         }
-      } else {
-        setMessage("No face detected. Please try again.")
+      } catch (error) {
+        console.error("Error durante el reconocimiento facial:", error)
+        setMessage("Ocurrió un error. Por favor, inténtalo de nuevo o contacta a soporte técnico.")
       }
     }
   }
