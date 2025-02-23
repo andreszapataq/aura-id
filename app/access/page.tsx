@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
+import FaceGuide from '../components/FaceGuide'
 
 export default function Access() {
   const [message, setMessage] = useState("")
@@ -49,34 +50,41 @@ export default function Access() {
             .from("employees")
             .select("*")
             .eq("face_data", searchData.faceId)
-            .single()
+            .maybeSingle()
 
-          if (error) throw error
-
-          if (employees) {
-            const now = new Date()
-            const { error: logError } = await supabase.from("access_logs").insert({
-              employee_id: employees.id,
-              timestamp: now.toISOString(),
-              type: "check_in",
-            })
-
-            if (logError) throw logError
-
-            const motivationalMessages = [
-              "¡Que tengas un excelente día!",
-              "¡Tu actitud positiva hace la diferencia!",
-              "¡Cree en ti mismo y estarás a medio camino!",
-              "¡Haz de hoy un día increíble!",
-              "¡Eres capaz de cosas extraordinarias!",
-            ]
-
-            const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)]
-
-            setMessage(`¡Bienvenido, ${employees.name}! ${randomMessage}`)
-          } else {
-            setMessage("Empleado no encontrado. Por favor, contacta a un administrador.")
+          if (error) {
+            if (!error.message.includes('no rows')) {
+              throw error;
+            }
+            setMessage("Tu rostro fue reconocido pero no se encontraron tus datos en el sistema. Por favor, contacta a un administrador.");
+            return;
           }
+
+          if (!employees) {
+            setMessage("No se encontraron tus datos en el sistema. Por favor, contacta a un administrador.");
+            return;
+          }
+
+          const now = new Date()
+          const { error: logError } = await supabase.from("access_logs").insert({
+            employee_id: employees.id,
+            timestamp: now.toISOString(),
+            type: "check_in",
+          })
+
+          if (logError) throw logError
+
+          const motivationalMessages = [
+            "¡Que tengas un excelente día!",
+            "¡Tu actitud positiva hace la diferencia!",
+            "¡Cree en ti mismo y estarás a medio camino!",
+            "¡Haz de hoy un día increíble!",
+            "¡Eres capaz de cosas extraordinarias!",
+          ]
+
+          const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)]
+
+          setMessage(`¡Bienvenido, ${employees.name}! ${randomMessage}`)
         }
       } catch (error) {
         console.error("Error durante el reconocimiento facial:", error)
@@ -87,7 +95,7 @@ export default function Access() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <h1 className="text-3xl font-bold mb-8">Employee Check In/Out</h1>
+      <h1 className="text-3xl font-bold mb-8">Control de Acceso</h1>
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <div className="space-y-4">
           <div>
@@ -99,8 +107,26 @@ export default function Access() {
             </button>
           </div>
           <div className="relative">
-            <video ref={videoRef} width="400" height="300" autoPlay muted className="rounded-lg" />
-            <canvas ref={canvasRef} width="400" height="300" className="absolute top-0 left-0" />
+            <div className="text-center mb-2 text-gray-600">
+              Centre el rostro en la guía
+            </div>
+            <div className="relative rounded-lg overflow-hidden">
+              <video 
+                ref={videoRef} 
+                width="400" 
+                height="300" 
+                autoPlay 
+                muted 
+                className="rounded-lg"
+              />
+              <FaceGuide />
+              <canvas 
+                ref={canvasRef} 
+                width="400" 
+                height="300" 
+                className="absolute top-0 left-0" 
+              />
+            </div>
           </div>
           <div>
             <button

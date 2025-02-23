@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import FaceGuide from '../components/FaceGuide'
 
 export default function Register() {
   const [name, setName] = useState("")
@@ -54,7 +55,19 @@ export default function Register() {
     e.preventDefault()
     try {
       if (!capturedImage) {
-        throw new Error("No face image captured")
+        throw new Error("No se ha capturado ninguna imagen")
+      }
+
+      // Primero verificamos si el ID ya existe
+      const { data: existingEmployee } = await supabase
+        .from("employees")
+        .select("employee_id")
+        .eq("employee_id", employeeId)
+        .single();
+
+      if (existingEmployee) {
+        alert(`El ID de empleado ${employeeId} ya está registrado en el sistema. Por favor, utilice un ID diferente.`);
+        return;
       }
 
       const indexResponse = await fetch('/api/index-face', {
@@ -71,11 +84,15 @@ export default function Register() {
       const indexData = await indexResponse.json();
       
       if (!indexResponse.ok) {
-        throw new Error(indexData.error || "Failed to index face");
+        if (indexResponse.status === 409) {
+          alert(`No se puede completar el registro: ${indexData.details.message}`);
+          return;
+        }
+        throw new Error(indexData.error || "Error en el registro");
       }
 
       if (!indexData.faceId) {
-        throw new Error("No face ID returned from the server");
+        throw new Error("No se recibió ID de rostro del servidor");
       }
 
       // Crear el objeto de datos del empleado
@@ -85,34 +102,40 @@ export default function Register() {
         face_data: indexData.faceId,
       };
 
-      // Save employee data to Supabase
+      // Guardar datos del empleado en Supabase
       const { error: supabaseError } = await supabase
         .from("employees")
         .insert(employeeData);
 
       if (supabaseError) {
-        console.error("Supabase error:", supabaseError);
-        throw new Error(supabaseError.message || "Error saving to database");
+        // Manejo específico para error de duplicado
+        if (supabaseError.code === '23505') {
+          alert(`El ID de empleado ${employeeId} ya está en uso. Por favor, utilice un ID diferente.`);
+          return;
+        }
+        
+        console.error("Error de Supabase:", supabaseError);
+        throw new Error(supabaseError.message || "Error al guardar en la base de datos");
       }
 
-      alert("Employee registered successfully!")
-      // Reset form
+      alert("¡Empleado registrado exitosamente!")
+      // Resetear formulario
       setName("")
       setEmployeeId("")
       setCapturedImage(null)
     } catch (error) {
-      console.error("Error registering employee:", error);
+      console.error("Error al registrar empleado:", error);
       alert(
         error instanceof Error 
           ? `Error: ${error.message}` 
-          : "Failed to register employee. Please try again."
+          : "Error al registrar empleado. Por favor, intente nuevamente."
       );
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <h1 className="text-3xl font-bold mb-8">Register New Employee</h1>
+      <h1 className="text-3xl font-bold mb-8">Registro de Empleado</h1>
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -151,8 +174,26 @@ export default function Register() {
             </button>
           </div>
           <div className="relative">
-            <video ref={videoRef} width="400" height="300" autoPlay muted className="rounded-lg" />
-            <canvas ref={canvasRef} width="400" height="300" className="absolute top-0 left-0" />
+            <div className="text-center mb-2 text-gray-600">
+              Centre el rostro en la guía
+            </div>
+            <div className="relative rounded-lg overflow-hidden">
+              <video 
+                ref={videoRef} 
+                width="400" 
+                height="300" 
+                autoPlay 
+                muted 
+                className="rounded-lg"
+              />
+              <FaceGuide />
+              <canvas 
+                ref={canvasRef} 
+                width="400" 
+                height="300" 
+                className="absolute top-0 left-0" 
+              />
+            </div>
           </div>
           <div>
             <button
