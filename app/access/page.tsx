@@ -6,19 +6,33 @@ import FaceGuide from '../components/FaceGuide'
 
 export default function Access() {
   const [message, setMessage] = useState("")
+  const [isCameraActive, setIsCameraActive] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   async function startVideo() {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          setIsCameraActive(true)
+          setMessage("") // Limpiar mensajes previos
+        }
       }
+    } catch (error) {
+      console.error("Error al iniciar la cámara:", error)
+      setMessage("No se pudo acceder a la cámara. Por favor, verifica los permisos.")
+      setIsCameraActive(false)
     }
   }
 
-  async function recognizeFace() {
+  async function handleAccess(type: "check_in" | "check_out") {
+    if (!isCameraActive) {
+      setMessage("Por favor, activa la cámara primero")
+      return
+    }
+
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current
       canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
@@ -45,7 +59,6 @@ export default function Access() {
         }
 
         if (searchData.faceId) {
-          // Fetch employee data from Supabase
           const { data: employees, error } = await supabase
             .from("employees")
             .select("*")
@@ -66,25 +79,37 @@ export default function Access() {
           }
 
           const now = new Date()
-          const { error: logError } = await supabase.from("access_logs").insert({
-            employee_id: employees.id,
-            timestamp: now.toISOString(),
-            type: "check_in",
-          })
+          const { error: logError } = await supabase
+            .from("access_logs")
+            .insert({
+              employee_id: employees.id,
+              timestamp: now.toISOString(),
+              type: type,
+            })
 
           if (logError) throw logError
 
-          const motivationalMessages = [
-            "¡Que tengas un excelente día!",
-            "¡Tu actitud positiva hace la diferencia!",
-            "¡Cree en ti mismo y estarás a medio camino!",
-            "¡Haz de hoy un día increíble!",
-            "¡Eres capaz de cosas extraordinarias!",
-          ]
+          const messages = {
+            "check_in": [
+              "¡Que tengas un excelente día!",
+              "¡Tu actitud positiva hace la diferencia!",
+              "¡Haz de hoy un día increíble!",
+              "¡Eres capaz de cosas extraordinarias!",
+              "¡Bienvenido a un nuevo día de oportunidades!"
+            ],
+            "check_out": [
+              "¡Que descanses! Gracias por tu trabajo hoy.",
+              "¡Hasta mañana! Buen descanso.",
+              "¡Nos vemos pronto! Disfruta tu tiempo libre.",
+              "¡Gracias por tu dedicación! Descansa bien.",
+              "¡Hasta pronto! Tu esfuerzo hace la diferencia."
+            ]
+          }
 
-          const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)]
+          const typeMessages = messages[type];
+          const randomMessage = typeMessages[Math.floor(Math.random() * typeMessages.length)];
 
-          setMessage(`¡Bienvenido, ${employees.name}! ${randomMessage}`)
+          setMessage(`¡${type === "check_in" ? "Bienvenido" : "Hasta pronto"}, ${employees.name}! ${randomMessage}`);
         }
       } catch (error) {
         console.error("Error durante el reconocimiento facial:", error)
@@ -101,14 +126,21 @@ export default function Access() {
           <div>
             <button
               onClick={startVideo}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+              className={`w-full font-bold py-2 px-4 rounded ${
+                isCameraActive 
+                  ? "bg-gray-400 cursor-not-allowed" 
+                  : "bg-blue-500 hover:bg-blue-600 text-white"
+              }`}
+              disabled={isCameraActive}
             >
-              Start Camera
+              {isCameraActive ? "Cámara Activada" : "Iniciar Cámara"}
             </button>
           </div>
           <div className="relative">
             <div className="text-center mb-2 text-gray-600">
-              Centre el rostro en la guía
+              {isCameraActive 
+                ? "Centre el rostro en la guía" 
+                : "Active la cámara para comenzar"}
             </div>
             <div className="relative rounded-lg overflow-hidden">
               <video 
@@ -117,26 +149,51 @@ export default function Access() {
                 height="300" 
                 autoPlay 
                 muted 
-                className="rounded-lg"
+                className={`rounded-lg ${!isCameraActive && 'opacity-50'} w-full h-auto`}
               />
-              <FaceGuide />
+              {isCameraActive && <FaceGuide />}
               <canvas 
                 ref={canvasRef} 
                 width="400" 
                 height="300" 
-                className="absolute top-0 left-0" 
+                className="absolute inset-0 w-full h-full" 
+                style={{ objectFit: 'contain' }}
               />
             </div>
           </div>
-          <div>
+          <div className="flex space-x-4">
             <button
-              onClick={recognizeFace}
-              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
+              onClick={() => handleAccess("check_in")}
+              className={`w-full font-bold py-2 px-4 rounded ${
+                isCameraActive
+                  ? "bg-green-500 hover:bg-green-600 text-white"
+                  : "bg-gray-300 cursor-not-allowed text-gray-500"
+              }`}
+              disabled={!isCameraActive}
             >
-              Check In/Out
+              Entrada
+            </button>
+            <button
+              onClick={() => handleAccess("check_out")}
+              className={`w-full font-bold py-2 px-4 rounded ${
+                isCameraActive
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : "bg-gray-300 cursor-not-allowed text-gray-500"
+              }`}
+              disabled={!isCameraActive}
+            >
+              Salida
             </button>
           </div>
-          {message && <div className="mt-4 p-4 bg-blue-100 text-blue-800 rounded-lg">{message}</div>}
+          {message && (
+            <div className={`mt-4 p-4 rounded-lg text-center ${
+              message.includes("error") || message.includes("verifica")
+                ? "bg-red-100 text-red-800"
+                : "bg-blue-100 text-blue-800"
+            }`}>
+              {message}
+            </div>
+          )}
         </div>
       </div>
     </div>
