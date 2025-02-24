@@ -33,43 +33,57 @@ export default function Access() {
     }
   }
 
-  function getWelcomeMessage(name: string, type: string, isFirstLog: boolean, isTemporaryExit: boolean) {
+  function getFirstName(fullName: string): string {
+    const nameParts = fullName.trim().split(' ');
+    
+    // Si tiene más de 2 palabras, tomar las dos primeras (nombre compuesto)
+    if (nameParts.length > 2) {
+      return `${nameParts[0]} ${nameParts[1]}`;
+    }
+    
+    // Si tiene solo 2 palabras o menos, tomar la primera
+    return nameParts[0];
+  }
+
+  function getWelcomeMessage(fullName: string, type: string, isFirstLog: boolean, isTemporaryExit: boolean) {
     const timeOfDay = new Date().getHours();
+    const name = getFirstName(fullName);
+    
     const messages = {
       "check_in": {
-        first: [ // Mensajes para la primera entrada del día
+        first: [ // Primera entrada del día
           timeOfDay < 12 
             ? `¡Buenos días ${name}! Que tengas una excelente jornada.`
             : timeOfDay < 19
               ? `¡Buenas tardes ${name}! Bienvenido al trabajo.`
               : `¡Buenas noches ${name}! Bienvenido a tu turno.`,
-          "¡Que sea un día productivo y positivo!",
-          "¡Comencemos este día con energía!",
-          "¡Bienvenido! Hoy será un gran día.",
+          `¡Hola ${name}! Que sea un día productivo y positivo.`,
+          `¡Bienvenido ${name}! Hoy será un gran día.`,
+          `¡${name}, es un gusto verte! Comencemos este día con energía.`,
         ],
-        return: [ // Mensajes para regresos después de recesos
-          "¡Bienvenido de vuelta!",
-          "¡Continuemos con las actividades!",
-          "¡Adelante con el resto de la jornada!",
-          "¡De vuelta al trabajo!",
+        return: [ // Regresos después de recesos
+          `¡Bienvenido de vuelta ${name}!`,
+          `¡${name}, continuemos con las actividades!`,
+          `¡Adelante ${name}, sigamos con el resto de la jornada!`,
+          `¡${name}, qué bueno tenerte de vuelta!`,
         ]
       },
       "check_out": {
-        temporary: [ // Mensajes para salidas temporales
-          "¡Hasta pronto!",
-          "¡Te esperamos de vuelta!",
-          "¡Nos vemos en un rato!",
-          "¡Regresa pronto!",
+        temporary: [ // Salidas temporales
+          `¡Hasta pronto ${name}!`,
+          `¡${name}, te esperamos de vuelta!`,
+          `¡Nos vemos en un rato ${name}!`,
+          `¡${name}, que disfrutes tu descanso!`,
         ],
-        final: [ // Mensajes para la salida final del día
+        final: [ // Salida final del día
           timeOfDay < 12 
-            ? "¡Que tengas un excelente resto del día!"
+            ? `¡${name}, que tengas un excelente resto del día!`
             : timeOfDay < 19
-              ? "¡Que tengas una excelente tarde!"
-              : "¡Que descanses! Nos vemos mañana.",
-          "¡Gracias por tu trabajo de hoy!",
-          "¡Hasta mañana! Disfruta tu tiempo libre.",
-          "¡Que tengas un buen descanso!",
+              ? `¡${name}, que tengas una excelente tarde!`
+              : `¡${name}, que descanses! Nos vemos mañana.`,
+          `¡Gracias por tu trabajo de hoy ${name}!`,
+          `¡Hasta mañana ${name}! Disfruta tu tiempo libre.`,
+          `¡${name}, que tengas un buen descanso!`,
         ]
       }
     };
@@ -196,9 +210,9 @@ export default function Access() {
           if (logError) throw logError
 
           const welcomeMessage = getWelcomeMessage(
-            employees.name, 
-            type, 
-            isFirstLog, 
+            employees.name,
+            type,
+            isFirstLog,
             isTemporaryExit
           );
 
