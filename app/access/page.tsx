@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import FaceGuide from '../components/FaceGuide'
+import LivenessDetection from '../components/LivenessDetection'
 
 interface LastAccessLog {
   type: 'check_in' | 'check_out';
@@ -15,6 +16,9 @@ export default function Access() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [lastLog, setLastLog] = useState<LastAccessLog | null>(null)
+  const [showLivenessDetection, setShowLivenessDetection] = useState(false)
+  const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('none')
+  const [verifiedImage, setVerifiedImage] = useState<string | null>(null)
 
   async function startVideo() {
     try {
@@ -31,6 +35,38 @@ export default function Access() {
       setMessage("No se pudo acceder a la cámara. Por favor, verifica los permisos.")
       setIsCameraActive(false)
     }
+  }
+
+  function startLivenessDetection() {
+    if (isCameraActive && videoRef.current?.srcObject) {
+      // Detener la cámara actual antes de iniciar la detección de presencia
+      const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
+      tracks.forEach(track => track.stop())
+    }
+    
+    setShowLivenessDetection(true)
+    setLivenessStatus('checking')
+  }
+
+  function handleLivenessSuccess(referenceImage: string) {
+    setVerifiedImage(referenceImage)
+    setLivenessStatus('success')
+    setShowLivenessDetection(false)
+    setMessage("Verificación exitosa. Ahora puede registrar entrada o salida.")
+  }
+
+  function handleLivenessError(error: Error) {
+    console.error("Error en verificación de presencia:", error)
+    setLivenessStatus('failed')
+    setShowLivenessDetection(false)
+    setMessage(`Error: ${error.message}`)
+  }
+
+  function handleLivenessCancel() {
+    setShowLivenessDetection(false)
+    setLivenessStatus('none')
+    // Reiniciar la cámara normal
+    startVideo()
   }
 
   function getFirstName(fullName: string): string {
@@ -98,131 +134,129 @@ export default function Access() {
   }
 
   async function handleAccess(type: "check_in" | "check_out") {
-    if (!isCameraActive) {
-      setMessage("Por favor, activa la cámara primero")
+    if (livenessStatus !== 'success' || !verifiedImage) {
+      setMessage("Debe completar la verificación de presencia primero")
       return
     }
 
-    if (videoRef.current && canvasRef.current) {
-      const canvas = canvasRef.current
-      canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
-      const imageData = canvas.toDataURL()
+    try {
+      const searchResponse = await fetch('/api/search-face', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ imageData: verifiedImage }),
+      });
 
-      try {
-        const searchResponse = await fetch('/api/search-face', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ imageData }),
-        });
+      const searchData = await searchResponse.json();
 
-        const searchData = await searchResponse.json();
+      if (!searchResponse.ok) {
+        throw new Error(searchData.error || 'Failed to search face');
+      }
 
-        if (!searchResponse.ok) {
-          throw new Error(searchData.error || 'Failed to search face');
-        }
+      if (searchData.status === 'FACE_NOT_FOUND') {
+        setMessage("No estás registrado en el sistema. Por favor, contacta a RRHH para registrarte.");
+        return;
+      }
 
-        if (searchData.status === 'FACE_NOT_FOUND') {
-          setMessage("No estás registrado en el sistema. Por favor, contacta a RRHH para registrarte.");
+      if (searchData.faceId) {
+        const { data: employees, error } = await supabase
+          .from("employees")
+          .select("*")
+          .eq("face_data", searchData.faceId)
+          .maybeSingle()
+
+        if (error || !employees) {
+          if (error && !error.message.includes('no rows')) {
+            throw error;
+          }
+          setMessage("Tu rostro fue reconocido pero no se encontraron tus datos en el sistema. Por favor, contacta a un administrador.");
           return;
         }
 
-        if (searchData.faceId) {
-          const { data: employees, error } = await supabase
-            .from("employees")
-            .select("*")
-            .eq("face_data", searchData.faceId)
-            .maybeSingle()
+        // Obtener los registros del día actual
+        const today = new Date();
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+        
+        const { data: todayAccess, error: accessError } = await supabase
+          .from("access_logs")
+          .select("*")
+          .eq("employee_id", employees.id)
+          .gte("timestamp", startOfDay)
+          .order("timestamp", { ascending: false });
 
-          if (error || !employees) {
-            if (error && !error.message.includes('no rows')) {
-              throw error;
-            }
-            setMessage("Tu rostro fue reconocido pero no se encontraron tus datos en el sistema. Por favor, contacta a un administrador.");
+        if (accessError) throw accessError;
+
+        // Determinar si es el primer registro del día y si es una salida temporal
+        const isFirstLog = !todayAccess || todayAccess.length === 0;
+        const isTemporaryExit = type === "check_out" && 
+          today.getHours() < 17 && // Asumiendo que 17:00 es una hora típica de salida
+          todayAccess && 
+          todayAccess.length > 0;
+
+        // Manejar registro incompleto del día anterior
+        if (lastLog && lastLog.type === "check_in") {
+          const lastAccessDate = new Date(lastLog.timestamp);
+          const isLastAccessToday = lastAccessDate >= new Date(startOfDay);
+          
+          if (!isLastAccessToday && lastLog.type === "check_in") {
+            // Registrar salida automática del día anterior
+            await supabase.from("access_logs").insert({
+              employee_id: employees.id,
+              timestamp: new Date(lastAccessDate.getFullYear(), 
+                                lastAccessDate.getMonth(), 
+                                lastAccessDate.getDate(), 
+                                23, 59, 59).toISOString(),
+              type: "check_out",
+              auto_generated: true
+            });
+            
+            setMessage("Se registró automáticamente la salida del día anterior.");
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Mostrar mensaje por 3 segundos
+          }
+        }
+
+        // Validar el tipo de registro actual
+        if (todayAccess && todayAccess.length > 0) {
+          const lastAccessType = todayAccess[0].type;
+
+          // No permitir dos registros del mismo tipo consecutivos
+          if (type === lastAccessType) {
+            const actionType = type === "check_in" ? "entrada" : "salida";
+            setMessage(`No puedes registrar una ${actionType} dos veces seguidas. Por favor, registra una ${type === "check_in" ? "salida" : "entrada"}.`);
             return;
           }
-
-          // Obtener los registros del día actual
-          const today = new Date();
-          const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-          
-          const { data: todayAccess, error: accessError } = await supabase
-            .from("access_logs")
-            .select("*")
-            .eq("employee_id", employees.id)
-            .gte("timestamp", startOfDay)
-            .order("timestamp", { ascending: false });
-
-          if (accessError) throw accessError;
-
-          // Determinar si es el primer registro del día y si es una salida temporal
-          const isFirstLog = !todayAccess || todayAccess.length === 0;
-          const isTemporaryExit = type === "check_out" && 
-            today.getHours() < 17 && // Asumiendo que 17:00 es una hora típica de salida
-            todayAccess && 
-            todayAccess.length > 0;
-
-          // Manejar registro incompleto del día anterior
-          if (lastLog && lastLog.type === "check_in") {
-            const lastAccessDate = new Date(lastLog.timestamp);
-            const isLastAccessToday = lastAccessDate >= new Date(startOfDay);
-            
-            if (!isLastAccessToday && lastLog.type === "check_in") {
-              // Registrar salida automática del día anterior
-              await supabase.from("access_logs").insert({
-                employee_id: employees.id,
-                timestamp: new Date(lastAccessDate.getFullYear(), 
-                                  lastAccessDate.getMonth(), 
-                                  lastAccessDate.getDate(), 
-                                  23, 59, 59).toISOString(),
-                type: "check_out",
-                auto_generated: true
-              });
-              
-              setMessage("Se registró automáticamente la salida del día anterior.");
-              await new Promise(resolve => setTimeout(resolve, 3000)); // Mostrar mensaje por 3 segundos
-            }
-          }
-
-          // Validar el tipo de registro actual
-          if (todayAccess && todayAccess.length > 0) {
-            const lastAccessType = todayAccess[0].type;
-
-            // No permitir dos registros del mismo tipo consecutivos
-            if (type === lastAccessType) {
-              const actionType = type === "check_in" ? "entrada" : "salida";
-              setMessage(`No puedes registrar una ${actionType} dos veces seguidas. Por favor, registra una ${type === "check_in" ? "salida" : "entrada"}.`);
-              return;
-            }
-          }
-
-          // Registrar nuevo acceso
-          const now = new Date()
-          const { error: logError } = await supabase
-            .from("access_logs")
-            .insert({
-              employee_id: employees.id,
-              timestamp: now.toISOString(),
-              type: type,
-            })
-
-          if (logError) throw logError
-
-          const welcomeMessage = getWelcomeMessage(
-            employees.name,
-            type,
-            isFirstLog,
-            isTemporaryExit
-          );
-
-          setMessage(welcomeMessage);
-          setLastLog({ type, timestamp: now.toISOString() });
         }
-      } catch (error) {
-        console.error("Error durante el reconocimiento facial:", error)
-        setMessage("Ocurrió un error. Por favor, inténtalo de nuevo o contacta a soporte técnico.")
+
+        // Registrar nuevo acceso
+        const now = new Date()
+        const { error: logError } = await supabase
+          .from("access_logs")
+          .insert({
+            employee_id: employees.id,
+            timestamp: now.toISOString(),
+            type: type,
+          })
+
+        if (logError) throw logError
+
+        const welcomeMessage = getWelcomeMessage(
+          employees.name,
+          type,
+          isFirstLog,
+          isTemporaryExit
+        );
+
+        setMessage(welcomeMessage);
+        setLastLog({ type, timestamp: now.toISOString() });
+        
+        // Resetear el estado de verificación después de un registro exitoso
+        setLivenessStatus('none');
+        setVerifiedImage(null);
       }
+    } catch (error) {
+      console.error("Error durante el reconocimiento facial:", error)
+      setMessage("Ocurrió un error. Por favor, inténtalo de nuevo o contacta a soporte técnico.")
     }
   }
 
@@ -230,79 +264,114 @@ export default function Access() {
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
       <h1 className="text-3xl font-bold mb-8">Control de Acceso</h1>
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <div className="space-y-4">
-          <div>
-            <button
-              onClick={startVideo}
-              className={`w-full font-bold py-2 px-4 rounded ${
-                isCameraActive 
-                  ? "bg-gray-400 cursor-not-allowed" 
-                  : "bg-blue-500 hover:bg-blue-600 text-white"
-              }`}
-              disabled={isCameraActive}
-            >
-              {isCameraActive ? "Cámara Activada" : "Iniciar Cámara"}
-            </button>
-          </div>
-          <div className="relative">
-            <div className="text-center mb-2 text-gray-600">
-              {isCameraActive 
-                ? "Centre el rostro en la guía" 
-                : "Active la cámara para comenzar"}
+        {showLivenessDetection ? (
+          <LivenessDetection
+            onSuccess={handleLivenessSuccess}
+            onError={handleLivenessError}
+            onCancel={handleLivenessCancel}
+          />
+        ) : (
+          <div className="space-y-4">
+            {!livenessStatus || livenessStatus !== 'success' ? (
+              <>
+                <div>
+                  <button
+                    onClick={startVideo}
+                    className={`w-full font-bold py-2 px-4 rounded ${
+                      isCameraActive 
+                        ? "bg-gray-400 cursor-not-allowed" 
+                        : "bg-blue-500 hover:bg-blue-600 text-white"
+                    }`}
+                    disabled={isCameraActive}
+                  >
+                    {isCameraActive ? "Cámara Activada" : "Iniciar Cámara"}
+                  </button>
+                </div>
+                <div className="relative">
+                  <div className="text-center mb-2 text-gray-600">
+                    {isCameraActive 
+                      ? "Centre el rostro en la guía" 
+                      : "Active la cámara para comenzar"}
+                  </div>
+                  <div className="relative rounded-lg overflow-hidden">
+                    <video 
+                      ref={videoRef} 
+                      width="400" 
+                      height="300" 
+                      autoPlay 
+                      muted 
+                      className={`rounded-lg ${!isCameraActive && 'opacity-50'} w-full h-auto`}
+                    />
+                    {isCameraActive && <FaceGuide />}
+                    <canvas 
+                      ref={canvasRef} 
+                      width="400" 
+                      height="300" 
+                      className="absolute inset-0 w-full h-full" 
+                      style={{ objectFit: 'contain' }}
+                    />
+                  </div>
+                </div>
+                <div className="flex space-x-4 mb-4">
+                  <button
+                    onClick={startLivenessDetection}
+                    className={`w-full font-bold py-2 px-4 rounded ${
+                      isCameraActive
+                        ? "bg-blue-500 hover:bg-blue-600 text-white"
+                        : "bg-gray-300 cursor-not-allowed text-gray-500"
+                    }`}
+                    disabled={!isCameraActive}
+                  >
+                    Verificar Presencia
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="mb-4 p-4 bg-green-50 rounded-lg text-center">
+                <div className="text-green-600 font-semibold">
+                  ✓ Verificación de presencia exitosa
+                </div>
+                <p className="text-sm text-gray-600 mt-2">
+                  Ahora puede registrar su entrada o salida
+                </p>
+              </div>
+            )}
+            
+            <div className="flex space-x-4">
+              <button
+                onClick={() => handleAccess("check_in")}
+                className={`w-full font-bold py-2 px-4 rounded ${
+                  livenessStatus === 'success'
+                    ? "bg-green-500 hover:bg-green-600 text-white"
+                    : "bg-gray-300 cursor-not-allowed text-gray-500"
+                }`}
+                disabled={livenessStatus !== 'success'}
+              >
+                Entrada
+              </button>
+              <button
+                onClick={() => handleAccess("check_out")}
+                className={`w-full font-bold py-2 px-4 rounded ${
+                  livenessStatus === 'success'
+                    ? "bg-red-500 hover:bg-red-600 text-white"
+                    : "bg-gray-300 cursor-not-allowed text-gray-500"
+                }`}
+                disabled={livenessStatus !== 'success'}
+              >
+                Salida
+              </button>
             </div>
-            <div className="relative rounded-lg overflow-hidden">
-              <video 
-                ref={videoRef} 
-                width="400" 
-                height="300" 
-                autoPlay 
-                muted 
-                className={`rounded-lg ${!isCameraActive && 'opacity-50'} w-full h-auto`}
-              />
-              {isCameraActive && <FaceGuide />}
-              <canvas 
-                ref={canvasRef} 
-                width="400" 
-                height="300" 
-                className="absolute inset-0 w-full h-full" 
-                style={{ objectFit: 'contain' }}
-              />
-            </div>
+            {message && (
+              <div className={`mt-4 p-4 rounded-lg text-center ${
+                message.includes("error") || message.includes("verifica")
+                  ? "bg-red-100 text-red-800"
+                  : "bg-blue-100 text-blue-800"
+              }`}>
+                {message}
+              </div>
+            )}
           </div>
-          <div className="flex space-x-4">
-            <button
-              onClick={() => handleAccess("check_in")}
-              className={`w-full font-bold py-2 px-4 rounded ${
-                isCameraActive
-                  ? "bg-green-500 hover:bg-green-600 text-white"
-                  : "bg-gray-300 cursor-not-allowed text-gray-500"
-              }`}
-              disabled={!isCameraActive}
-            >
-              Entrada
-            </button>
-            <button
-              onClick={() => handleAccess("check_out")}
-              className={`w-full font-bold py-2 px-4 rounded ${
-                isCameraActive
-                  ? "bg-red-500 hover:bg-red-600 text-white"
-                  : "bg-gray-300 cursor-not-allowed text-gray-500"
-              }`}
-              disabled={!isCameraActive}
-            >
-              Salida
-            </button>
-          </div>
-          {message && (
-            <div className={`mt-4 p-4 rounded-lg text-center ${
-              message.includes("error") || message.includes("verifica")
-                ? "bg-red-100 text-red-800"
-                : "bg-blue-100 text-blue-800"
-            }`}>
-              {message}
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )
