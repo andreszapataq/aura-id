@@ -6,9 +6,11 @@ import { FaceLivenessDetector } from '@aws-amplify/ui-react-liveness';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - Configuración simplificada para AWS Amplify
-Amplify.configure({});
+// Reemplázala con esta configuración mínima
+Amplify.configure({
+  aws_cognito_identity_pool_id: process.env.NEXT_PUBLIC_AWS_IDENTITY_POOL_ID,
+  aws_project_region: process.env.NEXT_PUBLIC_AWS_REGION,
+});
 
 interface LivenessDetectionProps {
   onSuccess: (referenceImage: string, sessionId: string) => void;
