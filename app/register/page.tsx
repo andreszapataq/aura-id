@@ -2,8 +2,8 @@
 
 import { useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
-import FaceGuide from '../components/FaceGuide'
-import LivenessDetection from '../components/LivenessDetection'
+import FaceGuide from '../../components/FaceGuide'
+import LivenessDetection from '../../components/LivenessDetection'
 
 export default function Register() {
   const [name, setName] = useState("")
