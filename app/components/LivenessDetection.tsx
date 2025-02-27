@@ -1,16 +1,14 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react';
+import awsconfig from '@/aws-exports';
 import { Amplify } from 'aws-amplify';
 import { FaceLivenessDetector } from '@aws-amplify/ui-react-liveness';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
 
 // Reemplázala con esta configuración mínima
-Amplify.configure({
-  aws_cognito_identity_pool_id: process.env.NEXT_PUBLIC_AWS_IDENTITY_POOL_ID,
-  aws_project_region: process.env.NEXT_PUBLIC_AWS_REGION,
-});
+Amplify.configure(awsconfig);
 
 interface LivenessDetectionProps {
   onSuccess: (referenceImage: string, sessionId: string) => void;
