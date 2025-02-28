@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
-import FaceGuide from '../../components/FaceGuide'
 import LivenessDetection from '../../components/LivenessDetection'
 
 interface LastAccessLog {
@@ -12,41 +11,16 @@ interface LastAccessLog {
 
 export default function Access() {
   const [message, setMessage] = useState("")
-  const [isCameraActive, setIsCameraActive] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [lastLog, setLastLog] = useState<LastAccessLog | null>(null)
-  const [showLivenessDetection, setShowLivenessDetection] = useState(false)
-  const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('none')
+  const [showLivenessDetection, setShowLivenessDetection] = useState(true) // Iniciar con verificación de presencia activa
+  const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('checking')
   const [verifiedImage, setVerifiedImage] = useState<string | null>(null)
 
-  async function startVideo() {
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          setIsCameraActive(true)
-          setMessage("") // Limpiar mensajes previos
-        }
-      }
-    } catch (error) {
-      console.error("Error al iniciar la cámara:", error)
-      setMessage("No se pudo acceder a la cámara. Por favor, verifica los permisos.")
-      setIsCameraActive(false)
-    }
-  }
-
-  function startLivenessDetection() {
-    if (isCameraActive && videoRef.current?.srcObject) {
-      // Detener la cámara actual antes de iniciar la detección de presencia
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
-      tracks.forEach(track => track.stop())
-    }
-    
+  // Iniciar verificación de presencia automáticamente al cargar la página
+  useEffect(() => {
     setShowLivenessDetection(true)
     setLivenessStatus('checking')
-  }
+  }, [])
 
   function handleLivenessSuccess(referenceImage: string) {
     setVerifiedImage(referenceImage)
@@ -63,10 +37,9 @@ export default function Access() {
   }
 
   function handleLivenessCancel() {
-    setShowLivenessDetection(false)
-    setLivenessStatus('none')
-    // Reiniciar la cámara normal
-    startVideo()
+    // Al cancelar, reiniciar la verificación
+    setShowLivenessDetection(true)
+    setLivenessStatus('checking')
   }
 
   function getFirstName(fullName: string): string {
@@ -253,11 +226,22 @@ export default function Access() {
         // Resetear el estado de verificación después de un registro exitoso
         setLivenessStatus('none');
         setVerifiedImage(null);
+        // Mostrar nuevamente la verificación de presencia para un nuevo registro
+        setTimeout(() => {
+          setShowLivenessDetection(true);
+          setLivenessStatus('checking');
+        }, 5000); // Esperar 5 segundos antes de reiniciar la verificación
       }
     } catch (error) {
       console.error("Error durante el reconocimiento facial:", error)
       setMessage("Ocurrió un error. Por favor, inténtalo de nuevo o contacta a soporte técnico.")
     }
+  }
+
+  function reiniciarVerificacion() {
+    setShowLivenessDetection(true);
+    setLivenessStatus('checking');
+    setMessage("");
   }
 
   return (
@@ -272,61 +256,7 @@ export default function Access() {
           />
         ) : (
           <div className="space-y-4">
-            {!livenessStatus || livenessStatus !== 'success' ? (
-              <>
-                <div>
-                  <button
-                    onClick={startVideo}
-                    className={`w-full font-bold py-2 px-4 rounded ${
-                      isCameraActive 
-                        ? "bg-gray-400 cursor-not-allowed" 
-                        : "bg-blue-500 hover:bg-blue-600 text-white"
-                    }`}
-                    disabled={isCameraActive}
-                  >
-                    {isCameraActive ? "Cámara Activada" : "Iniciar Cámara"}
-                  </button>
-                </div>
-                <div className="relative">
-                  <div className="text-center mb-2 text-gray-600">
-                    {isCameraActive 
-                      ? "Centre el rostro en la guía" 
-                      : "Active la cámara para comenzar"}
-                  </div>
-                  <div className="relative rounded-lg overflow-hidden">
-                    <video 
-                      ref={videoRef} 
-                      width="400" 
-                      height="300" 
-                      autoPlay 
-                      muted 
-                      className={`rounded-lg ${!isCameraActive && 'opacity-50'} w-full h-auto`}
-                    />
-                    {isCameraActive && <FaceGuide />}
-                    <canvas 
-                      ref={canvasRef} 
-                      width="400" 
-                      height="300" 
-                      className="absolute inset-0 w-full h-full" 
-                      style={{ objectFit: 'contain' }}
-                    />
-                  </div>
-                </div>
-                <div className="flex space-x-4 mb-4">
-                  <button
-                    onClick={startLivenessDetection}
-                    className={`w-full font-bold py-2 px-4 rounded ${
-                      isCameraActive
-                        ? "bg-blue-500 hover:bg-blue-600 text-white"
-                        : "bg-gray-300 cursor-not-allowed text-gray-500"
-                    }`}
-                    disabled={!isCameraActive}
-                  >
-                    Verificar Presencia
-                  </button>
-                </div>
-              </>
-            ) : (
+            {livenessStatus === 'success' && (
               <div className="mb-4 p-4 bg-green-50 rounded-lg text-center">
                 <div className="text-green-600 font-semibold">
                   ✓ Verificación de presencia exitosa
@@ -361,6 +291,16 @@ export default function Access() {
                 Salida
               </button>
             </div>
+            
+            {livenessStatus === 'failed' && (
+              <button
+                onClick={reiniciarVerificacion}
+                className="w-full mt-4 font-bold py-2 px-4 rounded bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                Reintentar Verificación
+              </button>
+            )}
+            
             {message && (
               <div className={`mt-4 p-4 rounded-lg text-center ${
                 message.includes("error") || message.includes("verifica")
