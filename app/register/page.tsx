@@ -4,6 +4,7 @@ import { useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import FaceGuide from '../../components/FaceGuide'
 import LivenessDetection from '../../components/LivenessDetection'
+import Image from 'next/image'
 
 export default function Register() {
   const [name, setName] = useState("")
@@ -270,10 +271,13 @@ export default function Register() {
                 <div className="mt-4">
                   <div className="text-center mb-2 text-gray-600">Imagen capturada:</div>
                   <div className="relative rounded-lg overflow-hidden">
-                    <img 
+                    <Image 
                       src={capturedImage} 
                       alt="Imagen capturada" 
                       className="w-full h-auto rounded-lg"
+                      width={400}
+                      height={300}
+                      unoptimized={true}
                     />
                   </div>
                 </div>
