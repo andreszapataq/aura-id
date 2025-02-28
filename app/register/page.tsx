@@ -52,7 +52,6 @@ export default function Register() {
     setLivenessStatus('success')
     setShowLivenessDetection(false)
     setShowFormGuide(true)
-    setMessage("Verificación exitosa. Por favor complete el formulario.")
   }
 
   function handleLivenessError(error: Error) {
@@ -272,7 +271,7 @@ export default function Register() {
               </div>
             )}
 
-            {message && (
+            {message && !showFormGuide && (
               <div className={`mt-4 p-4 rounded-lg text-center ${
                 message.includes("error") || message.includes("verifica")
                   ? "bg-red-100 text-red-800"
@@ -282,8 +281,7 @@ export default function Register() {
               </div>
             )}
 
-            {/* Indicador de estado de verificación de presencia */}
-            {livenessStatus !== 'none' && (
+            {livenessStatus !== 'none' && !capturedImage && (
               <div className={`mt-4 p-3 rounded-lg flex items-center ${
                 livenessStatus === 'checking' ? 'bg-yellow-50 text-yellow-700' :
                 livenessStatus === 'success' ? 'bg-green-50 text-green-700' :
