@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
-import FaceGuide from '../../components/FaceGuide'
 import LivenessDetection from '../../components/LivenessDetection'
 import Image from 'next/image'
 
@@ -13,7 +12,6 @@ export default function Register() {
   const [isCameraActive, setIsCameraActive] = useState(false)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [showFormGuide, setShowFormGuide] = useState(false)
   const [showLivenessDetection, setShowLivenessDetection] = useState(false)
   const [livenessSessionId, setLivenessSessionId] = useState<string | null>(null)
@@ -210,58 +208,17 @@ export default function Register() {
             
             {!capturedImage && (
               <>
-                <div>
-                  <button
-                    type="button"
-                    onClick={startVideo}
-                    className={`w-full font-bold py-2 px-4 rounded ${
-                      isCameraActive 
-                        ? "bg-gray-400 cursor-not-allowed" 
-                        : "bg-blue-500 hover:bg-blue-600 text-white"
-                    }`}
-                    disabled={isCameraActive}
-                  >
-                    {isCameraActive ? "Cámara Activada" : "Iniciar Cámara"}
-                  </button>
-                </div>
-                <div className="relative">
-                  <div className="text-center mb-2 text-gray-600">
-                    {isCameraActive 
-                      ? "Centre el rostro en la guía" 
-                      : "Active la cámara para comenzar"}
-                  </div>
-                  <div className="relative rounded-lg overflow-hidden">
-                    <video 
-                      ref={videoRef} 
-                      width="400" 
-                      height="300" 
-                      autoPlay 
-                      muted 
-                      className={`rounded-lg ${!isCameraActive && 'opacity-50'} w-full h-auto`}
-                    />
-                    {isCameraActive && <FaceGuide />}
-                    <canvas 
-                      ref={canvasRef} 
-                      width="400" 
-                      height="300" 
-                      className="absolute inset-0 w-full h-full" 
-                      style={{ objectFit: 'contain' }}
-                    />
-                  </div>
-                </div>
-                <div className="flex space-x-4">
+                <div className="flex justify-center">
                   <button
                     type="button"
                     onClick={startLivenessDetection}
-                    className={`w-full font-bold py-2 px-4 rounded ${
-                      isCameraActive
-                        ? "bg-green-500 hover:bg-green-600 text-white"
-                        : "bg-gray-300 cursor-not-allowed text-gray-500"
-                    }`}
-                    disabled={!isCameraActive}
+                    className="w-full font-bold py-2 px-4 rounded bg-green-500 hover:bg-green-600 text-white"
                   >
                     Verificar Presencia
                   </button>
+                </div>
+                <div className="text-center mt-2 text-sm text-gray-600">
+                  Haga clic en el botón para iniciar la verificación de presencia
                 </div>
               </>
             )}
