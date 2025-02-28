@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import awsconfig from '@/aws-exports';
 import { Amplify } from 'aws-amplify';
 import { FaceLivenessDetector } from '@aws-amplify/ui-react-liveness';
@@ -27,6 +27,8 @@ export default function LivenessDetection({
   const [sessionUrl, setSessionUrl] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 3;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Función para crear una nueva sesión
   const createNewSession = useCallback(async () => {
@@ -102,12 +104,96 @@ export default function LivenessDetection({
     createNewSession();
   }, [createNewSession]);
 
+  // Función para capturar imagen de la webcam
+  const captureImageFromWebcam = useCallback(async (): Promise<string | null> => {
+    try {
+      console.log('Intentando capturar imagen de la webcam...');
+      
+      // Crear elementos temporales si no existen
+      const video = videoRef.current || document.createElement('video');
+      const canvas = canvasRef.current || document.createElement('canvas');
+      
+      if (!videoRef.current) {
+        video.style.display = 'none';
+        document.body.appendChild(video);
+      }
+      
+      if (!canvasRef.current) {
+        canvas.style.display = 'none';
+        document.body.appendChild(canvas);
+      }
+      
+      // Obtener acceso a la cámara
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        } 
+      });
+      
+      // Configurar el video
+      video.srcObject = stream;
+      video.play();
+      
+      // Esperar a que el video esté listo
+      await new Promise(resolve => {
+        video.onloadedmetadata = resolve;
+      });
+      
+      // Dar tiempo para que la cámara se ajuste
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Configurar el canvas
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      // Capturar la imagen
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('No se pudo obtener el contexto del canvas');
+      }
+      
+      // Dibujar el video en el canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Obtener la imagen como base64
+      const imageData = canvas.toDataURL('image/jpeg', 0.9);
+      
+      // Detener la cámara
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Limpiar elementos temporales
+      if (!videoRef.current) {
+        document.body.removeChild(video);
+      }
+      
+      if (!canvasRef.current) {
+        document.body.removeChild(canvas);
+      }
+      
+      console.log('Imagen capturada exitosamente:', imageData.substring(0, 50) + '...');
+      return imageData;
+    } catch (error) {
+      console.error('Error al capturar imagen de la webcam:', error);
+      return null;
+    }
+  }, []);
+
   const handleAnalysisComplete = async (result: { sessionId: string }) => {
     try {
       console.log('Análisis completado con sessionId:', result.sessionId);
-      if (result.sessionId) {
-        // Verificar el resultado de la sesión
-        const response = await fetch('/api/liveness/evaluate', {
+      if (!result.sessionId) {
+        const errorMsg = 'No se recibió ID de sesión';
+        console.error(errorMsg);
+        setError(errorMsg);
+        throw new Error(errorMsg);
+      }
+      
+      // Verificar el resultado de la sesión
+      let response;
+      try {
+        response = await fetch('/api/liveness/evaluate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -116,35 +202,98 @@ export default function LivenessDetection({
             sessionId: result.sessionId 
           }),
         });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error en la respuesta de la API:', errorText);
-          throw new Error(`Error en la respuesta: ${response.status} ${errorText}`);
-        }
-        
-        const data = await response.json();
-        console.log('Datos de evaluación recibidos:', data);
-        
-        // Si la sesión está en estado CREATED, mostrar el enlace para completarla
-        if (data.status === 'CREATED' && data.sessionUrl) {
-          setSessionUrl(data.sessionUrl);
-          setError('La sesión de verificación no ha sido completada. Por favor, complete el proceso siguiendo el enlace proporcionado.');
-          return;
-        }
-        
-        if (data.ok && data.referenceImage) {
-          // Convertir la imagen de referencia a formato base64
-          const referenceImage = `data:image/jpeg;base64,${data.referenceImage.Bytes}`;
-          onSuccess(referenceImage, result.sessionId);
-        } else {
-          console.error('Datos de evaluación inválidos:', data);
-          setError(data.error || 'La verificación de presencia falló');
-          throw new Error(data.error || 'La verificación de presencia falló');
-        }
-      } else {
-        throw new Error('No se recibió ID de sesión');
+      } catch (fetchError) {
+        const errorMsg = 'Error de red al evaluar la sesión';
+        console.error(errorMsg, fetchError);
+        setError(`${errorMsg}. Por favor, verifique su conexión a internet.`);
+        throw new Error(errorMsg);
       }
+      
+      if (!response.ok) {
+        let errorText = '';
+        try {
+          const errorData = await response.json();
+          errorText = errorData.error || `Error ${response.status}`;
+          console.error('Error en la respuesta de la API:', errorData);
+        } catch {
+          errorText = await response.text();
+          console.error('Error en la respuesta de la API (texto plano):', errorText);
+        }
+        
+        const errorMsg = `Error en la respuesta: ${response.status} - ${errorText}`;
+        setError(errorMsg);
+        throw new Error(errorMsg);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+        console.log('Datos de evaluación recibidos:', data);
+      } catch (jsonError) {
+        const errorMsg = 'Error al procesar la respuesta del servidor';
+        console.error(errorMsg, jsonError);
+        setError(`${errorMsg}. La respuesta no es un JSON válido.`);
+        throw new Error(errorMsg);
+      }
+      
+      // Verificar si los datos están vacíos o son inválidos
+      if (!data || Object.keys(data).length === 0) {
+        console.error('Datos de evaluación vacíos o inválidos');
+        setError('No se recibieron datos de evaluación del servidor. Por favor, intente nuevamente.');
+        throw new Error('Datos de evaluación vacíos o inválidos');
+      }
+      
+      // Si la sesión está en estado CREATED, mostrar el enlace para completarla
+      if (data.status === 'CREATED' && data.sessionUrl) {
+        setSessionUrl(data.sessionUrl);
+        setError('La sesión de verificación no ha sido completada. Por favor, complete el proceso siguiendo el enlace proporcionado.');
+        return;
+      }
+      
+      if (!data.ok) {
+        console.error('Datos de evaluación inválidos:', data);
+        const errorMsg = data.error || 'La verificación de presencia falló';
+        const detailsMsg = data.details ? ` (${JSON.stringify(data.details)})` : '';
+        setError(`${errorMsg}${detailsMsg}`);
+        throw new Error(errorMsg);
+      }
+      
+      let referenceImage = '';
+      
+      // Verificar si el servidor indica que debemos capturar la imagen en el cliente
+      if (data.captureImageInClient) {
+        console.log('El servidor indica que debemos capturar la imagen en el cliente');
+        const capturedImage = await captureImageFromWebcam();
+        
+        if (!capturedImage) {
+          console.error('No se pudo capturar la imagen de la webcam');
+          setError('No se pudo capturar la imagen de la webcam. Por favor, intente nuevamente.');
+          throw new Error('No se pudo capturar la imagen de la webcam');
+        }
+        
+        console.log('Usando imagen capturada localmente');
+        referenceImage = capturedImage;
+      }
+      // Verificar si tenemos una imagen de referencia válida de AWS
+      else if (data.referenceImage && data.referenceImage.Bytes) {
+        console.log('Usando imagen de referencia de AWS Rekognition');
+        console.log('Información de la imagen:', data.imageInfo || 'No disponible');
+        referenceImage = `data:image/jpeg;base64,${data.referenceImage.Bytes}`;
+      } else {
+        console.warn('No se recibió imagen de referencia válida de AWS');
+        setError('No se recibió imagen de referencia. Por favor, intente nuevamente.');
+        throw new Error('No se recibió imagen de referencia válida');
+      }
+      
+      // Verificar que la imagen no sea undefined o vacía
+      if (!referenceImage || referenceImage === 'data:image/jpeg;base64,undefined' || referenceImage === 'data:image/jpeg;base64,') {
+        console.error('Imagen de referencia inválida:', referenceImage);
+        setError('La imagen de referencia es inválida. Por favor, intente nuevamente.');
+        throw new Error('Imagen de referencia inválida');
+      }
+      
+      console.log('Verificación exitosa con imagen válida');
+      onSuccess(referenceImage, result.sessionId);
     } catch (error) {
       console.error('Error en handleAnalysisComplete:', error);
       onError(error instanceof Error ? error : new Error('Error desconocido'));
@@ -216,6 +365,10 @@ export default function LivenessDetection({
 
   return (
     <div className="liveness-container">
+      {/* Elementos ocultos para captura de imagen */}
+      <video ref={videoRef} style={{ display: 'none' }} />
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      
       <FaceLivenessDetector
         sessionId={sessionId}
         region={'us-east-1'}

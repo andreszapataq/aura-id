@@ -14,7 +14,6 @@ export default function Register() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [showFormGuide, setShowFormGuide] = useState(false)
   const [showLivenessDetection, setShowLivenessDetection] = useState(false)
-  const [livenessSessionId, setLivenessSessionId] = useState<string | null>(null)
   const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('none')
 
   async function startVideo() {
@@ -46,12 +45,38 @@ export default function Register() {
     setLivenessStatus('checking')
   }
 
-  function handleLivenessSuccess(referenceImage: string, sessionId: string) {
-    setCapturedImage(referenceImage)
-    setLivenessSessionId(sessionId)
-    setLivenessStatus('success')
-    setShowLivenessDetection(false)
-    setShowFormGuide(true)
+  function handleLivenessSuccess(referenceImage: string) {
+    console.log("Verificación exitosa con imagen:", referenceImage.substring(0, 50) + "...");
+    
+    // Verificar que la imagen sea válida
+    if (!referenceImage || referenceImage === 'data:image/jpeg;base64,undefined' || referenceImage === 'data:image/jpeg;base64,') {
+      console.error("Imagen de referencia inválida recibida en el registro");
+      setMessage("Error: La imagen capturada no es válida. Por favor, intente nuevamente.");
+      setLivenessStatus('failed');
+      return;
+    }
+    
+    // Verificar que la imagen tenga un formato válido
+    if (!referenceImage.startsWith('data:image/jpeg;base64,') && !referenceImage.startsWith('data:image/png;base64,')) {
+      console.error("Formato de imagen no válido:", referenceImage.substring(0, 30));
+      setMessage("Error: El formato de la imagen no es válido. Por favor, intente nuevamente.");
+      setLivenessStatus('failed');
+      return;
+    }
+    
+    // Verificar que la imagen tenga un tamaño razonable
+    if (referenceImage.length < 1000) {
+      console.error("Imagen demasiado pequeña:", referenceImage.length, "bytes");
+      setMessage("Error: La imagen capturada es demasiado pequeña. Por favor, intente nuevamente.");
+      setLivenessStatus('failed');
+      return;
+    }
+    
+    console.log("Imagen válida recibida, tamaño:", referenceImage.length, "bytes");
+    setCapturedImage(referenceImage);
+    setLivenessStatus('success');
+    setShowLivenessDetection(false);
+    setShowFormGuide(true);
   }
 
   function handleLivenessError(error: Error) {
@@ -74,23 +99,45 @@ export default function Register() {
       if (!capturedImage) {
         throw new Error("No se ha capturado ninguna imagen")
       }
+      
+      // Verificar que la imagen sea válida
+      if (capturedImage === 'data:image/jpeg;base64,undefined' || capturedImage === 'data:image/jpeg;base64,') {
+        throw new Error("La imagen capturada no es válida. Por favor, realice nuevamente la verificación de presencia.")
+      }
+      
+      // Verificar formato y tamaño de la imagen
+      if (!capturedImage.startsWith('data:image/jpeg;base64,') && !capturedImage.startsWith('data:image/png;base64,')) {
+        throw new Error("El formato de la imagen no es válido. Por favor, realice nuevamente la verificación de presencia.")
+      }
+      
+      if (capturedImage.length < 1000) {
+        throw new Error("La imagen es demasiado pequeña. Por favor, realice nuevamente la verificación de presencia.")
+      }
 
       if (!name.trim() || !employeeId.trim()) {
         throw new Error("Por favor, complete todos los campos")
       }
 
       // Verificamos si el ID ya existe
-      const { data: existingEmployee } = await supabase
+      const { data: existingEmployee, error: queryError } = await supabase
         .from("employees")
         .select("employee_id")
         .eq("employee_id", employeeId)
-        .single();
+        .maybeSingle()
 
-      if (existingEmployee) {
-        alert(`El ID de empleado ${employeeId} ya está registrado en el sistema. Por favor, utilice un ID diferente.`);
-        return;
+      if (queryError) {
+        console.error("Error al verificar ID existente:", queryError)
+        throw new Error("Error al verificar si el ID ya existe en la base de datos")
       }
 
+      if (existingEmployee) {
+        alert(`El ID de empleado ${employeeId} ya está registrado en el sistema. Por favor, utilice un ID diferente.`)
+        return
+      }
+
+      console.log("Enviando imagen para indexación:", capturedImage.substring(0, 50) + "...")
+      console.log("Tamaño de la imagen:", capturedImage.length)
+      
       const indexResponse = await fetch('/api/index-face', {
         method: 'POST',
         headers: {
@@ -100,39 +147,50 @@ export default function Register() {
           imageData: capturedImage,
           employeeId: employeeId,
         }),
-      });
+      })
 
-      const indexData = await indexResponse.json();
-      
       if (!indexResponse.ok) {
+        const indexData = await indexResponse.json()
+        console.error("Error en la respuesta de indexación:", indexData)
+        
         if (indexResponse.status === 409) {
-          alert(`No se puede completar el registro: ${indexData.details.message}`);
-          return;
+          alert(`No se puede completar el registro: ${indexData.details?.message || "El rostro ya está registrado"}`)
+          return
         }
-        throw new Error(indexData.error || "Error en el registro");
+        
+        throw new Error(indexData.error || "Error en el registro")
       }
 
+      const indexData = await indexResponse.json()
+      
       if (!indexData.faceId) {
-        throw new Error("No se recibió ID de rostro del servidor");
+        throw new Error("No se recibió ID de rostro del servidor")
       }
 
       const employeeData = {
         name,
         employee_id: employeeId,
         face_data: indexData.faceId,
-        liveness_session_id: livenessSessionId, // Guardar el ID de sesión de liveness
-      };
+      }
+
+      console.log("Guardando datos del empleado:", {
+        name,
+        employee_id: employeeId,
+        face_data: indexData.faceId
+      })
 
       const { error: supabaseError } = await supabase
         .from("employees")
-        .insert(employeeData);
+        .insert(employeeData)
 
       if (supabaseError) {
+        console.error("Error al guardar en Supabase:", supabaseError)
+        
         if (supabaseError.code === '23505') {
-          alert(`El ID de empleado ${employeeId} ya está en uso. Por favor, utilice un ID diferente.`);
-          return;
+          alert(`El ID de empleado ${employeeId} ya está en uso. Por favor, utilice un ID diferente.`)
+          return
         }
-        throw new Error(supabaseError.message || "Error al guardar en la base de datos");
+        throw new Error(supabaseError.message || "Error al guardar en la base de datos")
       }
 
       setMessage("¡Empleado registrado exitosamente!")
@@ -140,7 +198,6 @@ export default function Register() {
       setName("")
       setEmployeeId("")
       setCapturedImage(null)
-      setLivenessSessionId(null)
       setLivenessStatus('none')
       setIsCameraActive(false)
       if (videoRef.current?.srcObject) {
