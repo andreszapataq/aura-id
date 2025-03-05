@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { indexFace } from '@/lib/rekognition';
+import { supabase } from '@/lib/supabase';
 
 export async function POST(request: Request) {
   try {
@@ -7,6 +8,13 @@ export async function POST(request: Request) {
     let body;
     try {
       body = await request.json();
+      console.log("Datos recibidos en la solicitud:", {
+        hasImageData: !!body.imageData,
+        imageDataLength: body.imageData ? body.imageData.length : 0,
+        employeeId: body.employeeId,
+        name: body.name,
+        allFields: Object.keys(body)
+      });
     } catch (error) {
       console.error("Error al parsear el cuerpo de la solicitud:", error);
       return NextResponse.json({
@@ -16,24 +24,24 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
     
-    const { imageData, employeeId } = body;
+    // Extraer y validar campos requeridos
+    const { imageData, employeeId, name } = body;
 
-    // Validar parámetros
-    if (!imageData) {
-      console.error("Falta imageData en la solicitud");
+    // Verificar todos los campos requeridos
+    const missingFields = [];
+    if (!imageData) missingFields.push('imageData');
+    if (!employeeId) missingFields.push('employeeId');
+    if (!name) missingFields.push('name');
+
+    if (missingFields.length > 0) {
+      console.error(`Faltan campos requeridos: ${missingFields.join(', ')}`);
       return NextResponse.json({
         ok: false,
-        error: 'Se requiere imageData',
-        details: { message: 'El campo imageData es obligatorio' }
-      }, { status: 400 });
-    }
-
-    if (!employeeId) {
-      console.error("Falta employeeId en la solicitud");
-      return NextResponse.json({
-        ok: false,
-        error: 'Se requiere employeeId',
-        details: { message: 'El campo employeeId es obligatorio' }
+        error: 'Faltan campos requeridos',
+        details: { 
+          message: `Los siguientes campos son obligatorios: ${missingFields.join(', ')}`,
+          missingFields
+        }
       }, { status: 400 });
     }
     
@@ -79,9 +87,65 @@ export async function POST(request: Request) {
       
       console.log(`Rostro indexado exitosamente con ID: ${faceId}`);
       
-      return NextResponse.json({
-        ok: true,
+      // Guardar datos del empleado en Supabase
+      try {
+        console.log("Intentando guardar en Supabase:", {
+          name,
+          employee_id: employeeId,
+          face_data: faceId
+        });
+        
+        const { error: insertError } = await supabase
+          .from("employees")
+          .insert({
+            name,
+            employee_id: employeeId,
+            face_data: faceId,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error("Error al guardar en Supabase:", {
+            code: insertError.code,
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint
+          });
+          
+          // Si el error es de duplicación de ID de empleado
+          if (insertError.code === "23505") {
+            return NextResponse.json(
+              { message: `El ID de empleado ${employeeId} ya está registrado en el sistema` },
+              { status: 409 }
+            );
+          }
+          
+          return NextResponse.json(
+            { message: "Error al guardar en la base de datos", details: insertError },
+            { status: 500 }
+          );
+        }
+        
+        console.log("Datos guardados exitosamente en Supabase");
+      } catch (dbError) {
+        console.error("Error al interactuar con la base de datos:", dbError);
+        return NextResponse.json({
+          ok: false,
+          error: 'Error al guardar en la base de datos',
+          details: dbError instanceof Error ? { message: dbError.message } : { message: 'Error desconocido' }
+        }, { status: 500 });
+      }
+
+      return NextResponse.json({ 
+        success: true,
         faceId,
+        employee: {
+          id: employeeId,
+          name: name,
+          registeredAt: new Date().toISOString()
+        },
+        message: "Empleado registrado exitosamente"
       });
     } catch (error: unknown) {
       console.error("Error al indexar rostro:", error);

@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { supabase } from "@/lib/supabase"
 import LivenessDetection from '../../components/LivenessDetection'
 import Image from 'next/image'
+import { useRouter } from "next/navigation"
 
 export default function Register() {
   const [name, setName] = useState("")
@@ -15,6 +15,12 @@ export default function Register() {
   const [showFormGuide, setShowFormGuide] = useState(false)
   const [showLivenessDetection, setShowLivenessDetection] = useState(false)
   const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('none')
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState(false)
+  const [countdown, setCountdown] = useState(5)
+  const [registeredEmployee, setRegisteredEmployee] = useState<{name: string, id: string, registeredAt: string} | null>(null)
 
   async function startVideo() {
     try {
@@ -93,284 +99,340 @@ export default function Register() {
     startVideo()
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsLoading(true)
+    setError("")
+    setSuccess(false)
+
+    // Validar todos los campos requeridos
+    if (!capturedImage) {
+      setError("Por favor, complete la verificación de identidad primero")
+      setIsLoading(false)
+      return
+    }
+
+    if (!name.trim()) {
+      setError("Por favor, ingrese el nombre del empleado")
+      setIsLoading(false)
+      return
+    }
+
+    if (!employeeId.trim()) {
+      setError("Por favor, ingrese el ID del empleado")
+      setIsLoading(false)
+      return
+    }
+
     try {
-      if (!capturedImage) {
-        throw new Error("No se ha capturado ninguna imagen")
-      }
+      const requestData = {
+        imageData: capturedImage,
+        employeeId: employeeId.trim(),
+        name: name.trim(),
+      };
       
-      // Verificar que la imagen sea válida
-      if (capturedImage === 'data:image/jpeg;base64,undefined' || capturedImage === 'data:image/jpeg;base64,') {
-        throw new Error("La imagen capturada no es válida. Por favor, realice nuevamente la verificación de presencia.")
-      }
+      console.log("Enviando datos para registro:", {
+        hasImageData: !!capturedImage,
+        imageDataLength: capturedImage ? capturedImage.length : 0,
+        employeeId,
+        name
+      });
       
-      // Verificar formato y tamaño de la imagen
-      if (!capturedImage.startsWith('data:image/jpeg;base64,') && !capturedImage.startsWith('data:image/png;base64,')) {
-        throw new Error("El formato de la imagen no es válido. Por favor, realice nuevamente la verificación de presencia.")
-      }
-      
-      if (capturedImage.length < 1000) {
-        throw new Error("La imagen es demasiado pequeña. Por favor, realice nuevamente la verificación de presencia.")
-      }
+      const response = await fetch("/api/index-face", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      });
 
-      if (!name.trim() || !employeeId.trim()) {
-        throw new Error("Por favor, complete todos los campos")
-      }
+      const data = await response.json()
 
-      // Verificamos si el ID ya existe
-      const { data: existingEmployee, error: queryError } = await supabase
-        .from("employees")
-        .select("employee_id")
-        .eq("employee_id", employeeId)
-        .maybeSingle()
-
-      if (queryError) {
-        console.error("Error al verificar ID existente:", queryError)
-        throw new Error("Error al verificar si el ID ya existe en la base de datos")
-      }
-
-      if (existingEmployee) {
-        alert(`El ID de empleado ${employeeId} ya está registrado en el sistema. Por favor, utilice un ID diferente.`)
+      if (!response.ok) {
+        // Manejar específicamente el error de rostro ya registrado
+        if (response.status === 409) {
+          setError(`Error: ${data.message || 'Este rostro ya está registrado en el sistema'}`)
+          if (data.employeeData) {
+            setError(`Este rostro ya está registrado como ${data.employeeData.name} (ID: ${data.employeeData.employee_id})`)
+          }
+          setIsLoading(false)
+          return
+        }
+        
+        // Manejar otros tipos de errores
+        const errorMessage = data.message || data.error || "Error al registrar empleado";
+        const errorDetails = data.details ? ` (${JSON.stringify(data.details)})` : '';
+        console.error(`Error en la respuesta (${response.status}):`, errorMessage, data);
+        
+        // Guardar los datos de la respuesta para depuración
+        const debugInfo = JSON.stringify(data, null, 2);
+        console.log("Datos completos de la respuesta:", debugInfo);
+        
+        // Mostrar mensaje de error específico según el código de estado
+        if (response.status === 400) {
+          setError(`Error en los datos enviados: ${errorMessage}`);
+        } else if (response.status === 500) {
+          setError(`Error en el servidor: ${errorMessage}`);
+        } else {
+          setError(`Error (${response.status}): ${errorMessage}${errorDetails}`);
+        }
+        
+        setIsLoading(false)
         return
       }
 
-      console.log("Enviando imagen para indexación:", capturedImage.substring(0, 50) + "...")
-      console.log("Tamaño de la imagen:", capturedImage.length)
+      // Registro exitoso
+      setSuccess(true)
+      const registrationDate = new Date(data.employee?.registeredAt || new Date()).toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      setRegisteredEmployee({
+        name: data.employee?.name || name,
+        id: data.employee?.id || employeeId,
+        registeredAt: registrationDate
+      });
       
-      const indexResponse = await fetch('/api/index-face', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageData: capturedImage,
-          employeeId: employeeId,
-        }),
-      })
-
-      if (!indexResponse.ok) {
-        const indexData = await indexResponse.json()
-        console.error("Error en la respuesta de indexación:", indexData)
-        
-        if (indexResponse.status === 409) {
-          alert(`No se puede completar el registro: ${indexData.details?.message || "El rostro ya está registrado"}`)
-          return
-        }
-        
-        throw new Error(indexData.error || "Error en el registro")
-      }
-
-      const indexData = await indexResponse.json()
+      // Iniciar cuenta regresiva para redirección
+      let secondsLeft = 5
+      setCountdown(secondsLeft)
       
-      if (!indexData.faceId) {
-        throw new Error("No se recibió ID de rostro del servidor")
-      }
-
-      const employeeData = {
-        name,
-        employee_id: employeeId,
-        face_data: indexData.faceId,
-      }
-
-      console.log("Guardando datos del empleado:", {
-        name,
-        employee_id: employeeId,
-        face_data: indexData.faceId
-      })
-
-      const { error: supabaseError } = await supabase
-        .from("employees")
-        .insert(employeeData)
-
-      if (supabaseError) {
-        console.error("Error al guardar en Supabase:", supabaseError)
+      const countdownInterval = setInterval(() => {
+        secondsLeft -= 1
+        setCountdown(secondsLeft)
         
-        if (supabaseError.code === '23505') {
-          alert(`El ID de empleado ${employeeId} ya está en uso. Por favor, utilice un ID diferente.`)
-          return
+        if (secondsLeft <= 0) {
+          clearInterval(countdownInterval)
+          router.push("/")
         }
-        throw new Error(supabaseError.message || "Error al guardar en la base de datos")
-      }
-
-      setMessage("¡Empleado registrado exitosamente!")
-      // Resetear formulario
-      setName("")
-      setEmployeeId("")
-      setCapturedImage(null)
-      setLivenessStatus('none')
-      setIsCameraActive(false)
-      if (videoRef.current?.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
-        tracks.forEach(track => track.stop())
-        videoRef.current.srcObject = null
-      }
+      }, 1000)
+      
     } catch (error) {
-      console.error("Error al registrar empleado:", error)
-      setMessage(
-        error instanceof Error 
-          ? `Error: ${error.message}` 
-          : "Error al registrar empleado. Por favor, intente nuevamente."
-      )
+      console.error("Error al registrar:", error)
+      setError(error instanceof Error ? error.message : "Error desconocido al registrar empleado")
+    } finally {
+      setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <h1 className="text-3xl font-bold mb-8">Registro de Empleado</h1>
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        {showLivenessDetection ? (
-          <LivenessDetection
-            onSuccess={handleLivenessSuccess}
-            onError={handleLivenessError}
-            onCancel={handleLivenessCancel}
-          />
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className={`space-y-4 ${showFormGuide && !name ? 'animate-pulse' : ''}`}>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Nombre Completo
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value)
-                  if (showFormGuide) setShowFormGuide(false)
-                }}
-                className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                  showFormGuide && !name ? 'border-blue-500 ring-2 ring-blue-200' : ''
-                }`}
-                required
-              />
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Registro de Empleado</h1>
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="flex flex-col">
+            <div className="font-bold mb-1">Error al registrar empleado</div>
+            <p>{error}</p>
+            <button 
+              onClick={() => setError("")}
+              className="mt-2 bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded text-sm self-end"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {success && (
+        <div className="bg-green-50 border-2 border-green-400 text-green-800 px-6 py-5 rounded-lg mb-6 text-center">
+          <div className="flex items-center justify-center mb-4">
+            <div className="bg-green-100 rounded-full p-2 mr-3">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
             </div>
-            <div className={`space-y-4 ${showFormGuide && name && !employeeId ? 'animate-pulse' : ''}`}>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                ID de Empleado
-              </label>
-              <input
-                type="text"
-                value={employeeId}
-                onChange={(e) => {
-                  setEmployeeId(e.target.value)
-                  if (showFormGuide) setShowFormGuide(false)
-                }}
-                className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                  showFormGuide && name && !employeeId ? 'border-blue-500 ring-2 ring-blue-200' : ''
-                }`}
-                required
-              />
+            <span className="font-bold text-xl">¡Registro Exitoso!</span>
+          </div>
+          
+          {registeredEmployee && (
+            <div className="mb-4 bg-white p-4 rounded-lg border border-green-200">
+              <h3 className="font-semibold text-lg mb-2 text-green-700">Detalles del Empleado</h3>
+              <div className="grid grid-cols-2 gap-2 text-left">
+                <div className="text-gray-600">Nombre:</div>
+                <div className="font-medium">{registeredEmployee.name}</div>
+                
+                <div className="text-gray-600">ID de Empleado:</div>
+                <div className="font-medium">{registeredEmployee.id}</div>
+                
+                <div className="text-gray-600">Fecha de Registro:</div>
+                <div className="font-medium">{registeredEmployee.registeredAt}</div>
+              </div>
             </div>
+          )}
+          
+          <div className="bg-green-100 p-3 rounded-lg">
+            <p className="mb-2">Redirigiendo a la página principal en <strong className="text-green-700">{countdown}</strong> segundos...</p>
             
-            {!capturedImage && (
-              <>
-                <div className="flex justify-center">
+            <button 
+              onClick={() => router.push("/")}
+              className="mt-2 bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-md transition-colors duration-300"
+            >
+              Ir a la página principal ahora
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {!success && (
+        <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md mx-auto">
+          {showLivenessDetection ? (
+            <LivenessDetection
+              onSuccess={handleLivenessSuccess}
+              onError={handleLivenessError}
+              onCancel={handleLivenessCancel}
+            />
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className={`space-y-4 ${showFormGuide && !name ? 'animate-pulse' : ''}`}>
+                <label className="block text-gray-700 text-sm font-bold mb-2">
+                  Nombre Completo
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value)
+                    if (showFormGuide) setShowFormGuide(false)
+                  }}
+                  className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
+                    showFormGuide && !name ? 'border-blue-500 ring-2 ring-blue-200' : ''
+                  }`}
+                  required
+                />
+              </div>
+              <div className={`space-y-4 ${showFormGuide && name && !employeeId ? 'animate-pulse' : ''}`}>
+                <label className="block text-gray-700 text-sm font-bold mb-2">
+                  ID de Empleado
+                </label>
+                <input
+                  type="text"
+                  value={employeeId}
+                  onChange={(e) => {
+                    setEmployeeId(e.target.value)
+                    if (showFormGuide) setShowFormGuide(false)
+                  }}
+                  className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
+                    showFormGuide && name && !employeeId ? 'border-blue-500 ring-2 ring-blue-200' : ''
+                  }`}
+                  required
+                />
+              </div>
+              
+              {!capturedImage && (
+                <>
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={startLivenessDetection}
+                      className="w-full font-bold py-2 px-4 rounded bg-green-500 hover:bg-green-600 text-white"
+                    >
+                      Verificar Presencia
+                    </button>
+                  </div>
+                  <div className="text-center mt-2 text-sm text-gray-600">
+                    Haga clic en el botón para iniciar la verificación de presencia
+                  </div>
+                </>
+              )}
+              
+              {capturedImage && (
+                <>
+                  <div className="mt-4">
+                    <div className="text-center mb-2 text-gray-600">Imagen capturada:</div>
+                    <div className="relative rounded-lg overflow-hidden">
+                      <Image 
+                        src={capturedImage} 
+                        alt="Imagen capturada" 
+                        className="w-full h-auto rounded-lg"
+                        width={400}
+                        height={300}
+                        unoptimized={true}
+                      />
+                    </div>
+                  </div>
                   <button
-                    type="button"
-                    onClick={startLivenessDetection}
-                    className="w-full font-bold py-2 px-4 rounded bg-green-500 hover:bg-green-600 text-white"
+                    type="submit"
+                    disabled={isLoading || livenessStatus !== 'success'}
+                    className={`w-full py-2 px-4 rounded ${
+                      isLoading || livenessStatus !== 'success'
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-blue-500 hover:bg-blue-600'
+                    } text-white`}
                   >
-                    Verificar Presencia
+                    {isLoading ? 'Registrando...' : 'Registrar Empleado'}
                   </button>
-                </div>
-                <div className="text-center mt-2 text-sm text-gray-600">
-                  Haga clic en el botón para iniciar la verificación de presencia
-                </div>
-              </>
-            )}
-            
-            {capturedImage && (
-              <>
-                <div className="mt-4">
-                  <div className="text-center mb-2 text-gray-600">Imagen capturada:</div>
-                  <div className="relative rounded-lg overflow-hidden">
-                    <Image 
-                      src={capturedImage} 
-                      alt="Imagen capturada" 
-                      className="w-full h-auto rounded-lg"
-                      width={400}
-                      height={300}
-                      unoptimized={true}
-                    />
+                </>
+              )}
+              
+              {capturedImage && showFormGuide && (
+                <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                  <div className="text-center text-green-600 font-semibold mb-2">
+                    ✓ Verificación de presencia exitosa
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    <p className="font-medium mb-2">Próximos pasos:</p>
+                    {(!name || !employeeId) && (
+                      <p>Complete los campos: {[
+                        !name && "Nombre Completo",
+                        !employeeId && "ID del Empleado"
+                      ].filter(Boolean).join(" y ")}</p>
+                    )}
+                    {name && employeeId && (
+                      <p>Haga clic en &quot;Registrar&quot; para completar el proceso</p>
+                    )}
                   </div>
                 </div>
-                <button
-                  type="submit"
-                  className={`w-full font-bold py-2 px-4 rounded ${
-                    capturedImage && name && employeeId
-                      ? "bg-blue-500 hover:bg-blue-600 text-white"
-                      : "bg-gray-300 cursor-not-allowed text-gray-500"
-                  }`}
-                  disabled={!capturedImage || !name || !employeeId}
-                >
-                  Registrar
-                </button>
-              </>
-            )}
-            
-            {capturedImage && showFormGuide && (
-              <div className="mt-4 p-4 bg-green-50 rounded-lg">
-                <div className="text-center text-green-600 font-semibold mb-2">
-                  ✓ Verificación de presencia exitosa
-                </div>
-                <div className="text-sm text-gray-600">
-                  <p className="font-medium mb-2">Próximos pasos:</p>
-                  {(!name || !employeeId) && (
-                    <p>Complete los campos: {[
-                      !name && "Nombre Completo",
-                      !employeeId && "ID del Empleado"
-                    ].filter(Boolean).join(" y ")}</p>
-                  )}
-                  {name && employeeId && (
-                    <p>Haga clic en &quot;Registrar&quot; para completar el proceso</p>
-                  )}
-                </div>
-              </div>
-            )}
+              )}
 
-            {message && !showFormGuide && (
-              <div className={`mt-4 p-4 rounded-lg text-center ${
-                message.includes("error") || message.includes("verifica")
-                  ? "bg-red-100 text-red-800"
-                  : "bg-green-100 text-green-800"
-              }`}>
-                {message}
-              </div>
-            )}
+              {message && !showFormGuide && (
+                <div className={`mt-4 p-4 rounded-lg text-center ${
+                  message.includes("error") || message.includes("verifica")
+                    ? "bg-red-100 text-red-800"
+                    : "bg-green-100 text-green-800"
+                }`}>
+                  {message}
+                </div>
+              )}
 
-            {livenessStatus !== 'none' && !capturedImage && (
-              <div className={`mt-4 p-3 rounded-lg flex items-center ${
-                livenessStatus === 'checking' ? 'bg-yellow-50 text-yellow-700' :
-                livenessStatus === 'success' ? 'bg-green-50 text-green-700' :
-                'bg-red-50 text-red-700'
-              }`}>
-                {livenessStatus === 'checking' && (
-                  <>
-                    <div className="animate-spin h-4 w-4 border-2 border-yellow-500 rounded-full border-t-transparent mr-2"></div>
-                    <span>Verificando presencia...</span>
-                  </>
-                )}
-                {livenessStatus === 'success' && (
-                  <>
-                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                    <span>Verificación exitosa</span>
-                  </>
-                )}
-                {livenessStatus === 'failed' && (
-                  <>
-                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                    <span>Verificación fallida</span>
-                  </>
-                )}
-              </div>
-            )}
-          </form>
-        )}
-      </div>
+              {livenessStatus !== 'none' && !capturedImage && (
+                <div className={`mt-4 p-3 rounded-lg flex items-center ${
+                  livenessStatus === 'checking' ? 'bg-yellow-50 text-yellow-700' :
+                  livenessStatus === 'success' ? 'bg-green-50 text-green-700' :
+                  'bg-red-50 text-red-700'
+                }`}>
+                  {livenessStatus === 'checking' && (
+                    <>
+                      <div className="animate-spin h-4 w-4 border-2 border-yellow-500 rounded-full border-t-transparent mr-2"></div>
+                      <span>Verificando presencia...</span>
+                    </>
+                  )}
+                  {livenessStatus === 'success' && (
+                    <>
+                      <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                      <span>Verificación exitosa</span>
+                    </>
+                  )}
+                  {livenessStatus === 'failed' && (
+                    <>
+                      <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                      <span>Verificación fallida</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </form>
+          )}
+        </div>
+      )}
     </div>
   )
 }
