@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
-import LivenessDetection from '../../components/LivenessDetection'
+import LivenessDetection from '@/components/LivenessDetection'
 import Image from 'next/image'
 import { useRouter } from "next/navigation"
 
@@ -21,6 +21,7 @@ export default function Register() {
   const [success, setSuccess] = useState(false)
   const [countdown, setCountdown] = useState(5)
   const [registeredEmployee, setRegisteredEmployee] = useState<{name: string, id: string, registeredAt: string} | null>(null)
+  const [isOrphanFace, setIsOrphanFace] = useState(false)
 
   async function startVideo() {
     try {
@@ -151,12 +152,34 @@ export default function Register() {
       if (!response.ok) {
         // Manejar específicamente el error de rostro ya registrado
         if (response.status === 409) {
-          setError(`Error: ${data.message || 'Este rostro ya está registrado en el sistema'}`)
           if (data.employeeData) {
-            setError(`Este rostro ya está registrado como ${data.employeeData.name} (ID: ${data.employeeData.employee_id})`)
+            const similarityText = data.similarity ? ` (Similitud: ${Math.round(data.similarity)}%)` : '';
+            setError(`Este rostro ya está registrado como ${data.employeeData.name} (ID: ${data.employeeData.employee_id})${similarityText}`);
+            
+            // Mostrar un mensaje más detallado con la información del empleado existente
+            setRegisteredEmployee({
+              name: data.employeeData.name,
+              id: data.employeeData.employee_id,
+              registeredAt: new Date(data.employeeData.created_at || new Date()).toLocaleDateString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+            });
+          } else if (data.isOrphan) {
+            // Caso especial: rostro huérfano detectado (existe en AWS pero no en la base de datos)
+            setError(`Se detectó un rostro en AWS Rekognition, pero no hay empleados registrados en la base de datos. Esto indica una desincronización. Se recomienda limpiar la colección.`);
+            setIsOrphanFace(true);
+          } else if (data.similarity) {
+            // Si solo tenemos información de similitud (sin empleado asociado)
+            setError(`Se detectó un rostro muy similar en el sistema (Similitud: ${Math.round(data.similarity)}%). No se permite el registro para evitar duplicados.`);
+          } else {
+            setError(`Error: ${data.message || 'Este rostro ya está registrado en el sistema'}`);
           }
-          setIsLoading(false)
-          return
+          setIsLoading(false);
+          return;
         }
         
         // Manejar otros tipos de errores
@@ -228,8 +251,183 @@ export default function Register() {
           <div className="flex flex-col">
             <div className="font-bold mb-1">Error al registrar empleado</div>
             <p>{error}</p>
+            {registeredEmployee && (
+              <div className="mt-3 p-3 bg-white rounded border border-red-200">
+                <h3 className="font-bold text-red-800 mb-2">Información del empleado existente:</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="font-semibold">Nombre:</div>
+                  <div>{registeredEmployee.name}</div>
+                  <div className="font-semibold">ID:</div>
+                  <div>{registeredEmployee.id}</div>
+                  <div className="font-semibold">Registrado el:</div>
+                  <div>{registeredEmployee.registeredAt}</div>
+                </div>
+              </div>
+            )}
+            
+            {isOrphanFace && (
+              <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                <h3 className="font-bold text-blue-800 mb-2">Rostro huérfano detectado</h3>
+                <p className="text-sm text-blue-700 mb-2">
+                  Se ha detectado un rostro en AWS Rekognition que no tiene correspondencia en la base de datos.
+                  Esto suele ocurrir cuando:
+                </p>
+                <ul className="list-disc list-inside text-sm text-blue-700 mb-3 pl-2">
+                  <li>Se han eliminado registros de la base de datos pero no de AWS</li>
+                  <li>Se han realizado pruebas previas sin completar el registro</li>
+                  <li>Ha ocurrido un error de sincronización entre sistemas</li>
+                </ul>
+                <p className="text-sm text-blue-700 mb-3">
+                  Se recomienda limpiar la colección de rostros para resolver este problema.
+                </p>
+                <button
+                  onClick={async () => {
+                    setIsLoading(true);
+                    setError("Limpiando colección de rostros...");
+                    
+                    try {
+                      // Verificar si existe la clave ADMIN_API_KEY en localStorage
+                      const adminKey = localStorage.getItem('ADMIN_API_KEY') || 'admin-key';
+                      
+                      const response = await fetch(`/api/clean-collection?key=${adminKey}`);
+                      const data = await response.json();
+                      
+                      if (!response.ok) {
+                        setError(`Error al limpiar colección: ${data.message || "Error desconocido"}`);
+                        setIsLoading(false);
+                        return;
+                      }
+                      
+                      setError("Colección limpiada exitosamente. Intente registrar nuevamente.");
+                      setIsLoading(false);
+                      setIsOrphanFace(false);
+                    } catch (error) {
+                      setError(`Error al limpiar colección: ${error instanceof Error ? error.message : "Error desconocido"}`);
+                      setIsLoading(false);
+                    }
+                  }}
+                  className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded text-sm font-medium w-full"
+                >
+                  Limpiar colección de rostros
+                </button>
+              </div>
+            )}
+            
+            {error.includes("rostro similar") && !isOrphanFace && (
+              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                <p className="text-yellow-800 font-medium mb-2">¿Cree que esto es un error?</p>
+                <p className="text-sm text-yellow-700 mb-3">
+                  Si está seguro de que este rostro no está registrado y desea forzar el registro, puede usar el siguiente botón:
+                </p>
+                <div className="flex flex-col space-y-2">
+                  <button
+                    onClick={async () => {
+                      setIsLoading(true);
+                      setError("Intentando forzar el registro...");
+                      
+                      try {
+                        const requestData = {
+                          imageData: capturedImage,
+                          employeeId: employeeId.trim(),
+                          name: name.trim(),
+                        };
+                        
+                        const response = await fetch("/api/index-face?force=true", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify(requestData),
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (!response.ok) {
+                          setError(`Error al forzar registro: ${data.message || "Error desconocido"}`);
+                          setIsLoading(false);
+                          return;
+                        }
+                        
+                        // Registro exitoso
+                        setSuccess(true);
+                        setError("");
+                        const registrationDate = new Date(data.employee?.registeredAt || new Date()).toLocaleDateString('es-ES', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        });
+                        
+                        setRegisteredEmployee({
+                          name: data.employee?.name || name,
+                          id: data.employee?.id || employeeId,
+                          registeredAt: registrationDate
+                        });
+                        
+                        // Iniciar cuenta regresiva
+                        let count = 5;
+                        setCountdown(count);
+                        const timer = setInterval(() => {
+                          count--;
+                          setCountdown(count);
+                          if (count <= 0) {
+                            clearInterval(timer);
+                            router.push("/");
+                          }
+                        }, 1000);
+                      } catch (error) {
+                        setError(`Error inesperado: ${error instanceof Error ? error.message : "Error desconocido"}`);
+                        setIsLoading(false);
+                      }
+                    }}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white py-2 px-4 rounded text-sm font-medium"
+                  >
+                    Forzar registro (use con precaución)
+                  </button>
+                  
+                  <button
+                    onClick={async () => {
+                      setIsLoading(true);
+                      setError("Limpiando colección de rostros...");
+                      
+                      try {
+                        // Verificar si existe la clave ADMIN_API_KEY en localStorage
+                        const adminKey = localStorage.getItem('ADMIN_API_KEY') || 'admin-key';
+                        
+                        const response = await fetch(`/api/clean-collection?key=${adminKey}`);
+                        const data = await response.json();
+                        
+                        if (!response.ok) {
+                          setError(`Error al limpiar colección: ${data.message || "Error desconocido"}`);
+                          setIsLoading(false);
+                          return;
+                        }
+                        
+                        setError("Colección limpiada exitosamente. Intente registrar nuevamente.");
+                        setIsLoading(false);
+                      } catch (error) {
+                        setError(`Error al limpiar colección: ${error instanceof Error ? error.message : "Error desconocido"}`);
+                        setIsLoading(false);
+                      }
+                    }}
+                    className="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded text-sm font-medium"
+                  >
+                    Limpiar colección de rostros
+                  </button>
+                </div>
+                <p className="text-xs text-yellow-600 mt-2">
+                  Nota: La limpieza de la colección eliminará todos los rostros registrados en AWS Rekognition. Use solo si está seguro de que no hay empleados registrados en la base de datos.
+                </p>
+              </div>
+            )}
+            
             <button 
-              onClick={() => setError("")}
+              onClick={() => {
+                setError("");
+                setRegisteredEmployee(null);
+                setIsOrphanFace(false);
+              }}
               className="mt-2 bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded text-sm self-end"
             >
               Cerrar

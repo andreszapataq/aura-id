@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
-import { indexFace } from '@/lib/rekognition';
+import { indexFace, checkFaceExists } from '@/lib/rekognition';
 import { supabase } from '@/lib/supabase';
 
 export async function POST(request: Request) {
   try {
+    // Verificar si se está forzando el registro
+    const url = new URL(request.url);
+    const forceRegister = url.searchParams.get('force') === 'true';
+    
+    if (forceRegister) {
+      console.log("Se está forzando el registro a pesar de posibles coincidencias");
+    }
+    
     // Validar la solicitud
     let body;
     try {
@@ -71,6 +79,80 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // Verificar si el rostro ya existe en la colección (solo si no se está forzando el registro)
+    if (!forceRegister) {
+      try {
+        console.log("Verificando si el rostro ya existe en el sistema...");
+        const existingFace = await checkFaceExists(imageData);
+        
+        if (existingFace) {
+          console.log(`Se encontró un rostro similar con ID: ${existingFace.faceId}, similaridad: ${existingFace.similarity}%`);
+          
+          // Si la similitud es muy alta (>= 90%), bloquear el registro
+          if (existingFace.similarity && existingFace.similarity >= 90) {
+            console.log(`Similitud muy alta (${existingFace.similarity}%), verificando información del empleado...`);
+            
+            // Buscar información del empleado asociado al rostro
+            const { data: employeeData } = await supabase
+              .from("employees")
+              .select("*")
+              .eq("face_data", existingFace.faceId)
+              .single();
+            
+            if (employeeData) {
+              console.log(`El rostro ya está registrado para el empleado: ${employeeData.name} (ID: ${employeeData.employee_id})`);
+              return NextResponse.json({
+                ok: false,
+                error: 'Rostro ya registrado',
+                message: `Este rostro ya está registrado como ${employeeData.name} (ID: ${employeeData.employee_id})`,
+                employeeData,
+                similarity: existingFace.similarity,
+                faceId: existingFace.faceId
+              }, { status: 409 });
+            } else {
+              // Verificar si hay algún empleado en la base de datos
+              const { count } = await supabase
+                .from("employees")
+                .select("*", { count: 'exact', head: true });
+              
+              // Si no hay empleados en la base de datos, es probable que sea un rostro huérfano
+              if (count === 0) {
+                console.log("No hay empleados en la base de datos, pero se encontró un rostro similar en AWS. Posible rostro huérfano.");
+                return NextResponse.json({
+                  ok: false,
+                  error: 'Rostro huérfano detectado',
+                  message: `Se detectó un rostro similar en AWS Rekognition, pero no hay empleados registrados en la base de datos. Posible desincronización. Se recomienda limpiar la colección.`,
+                  similarity: existingFace.similarity,
+                  faceId: existingFace.faceId,
+                  isOrphan: true
+                }, { status: 409 });
+              }
+              
+              // Incluso si no encontramos el empleado, si la similitud es muy alta, bloqueamos el registro
+              console.log(`No se encontró información del empleado, pero la similitud es muy alta (${existingFace.similarity}%)`);
+              return NextResponse.json({
+                ok: false,
+                error: 'Rostro similar detectado',
+                message: `Se detectó un rostro muy similar en el sistema (Similitud: ${Math.round(existingFace.similarity)}%)`,
+                similarity: existingFace.similarity,
+                faceId: existingFace.faceId
+              }, { status: 409 });
+            }
+          }
+          
+          // Para similitudes menores, mostrar advertencia pero permitir continuar
+          console.log(`Similitud moderada (${existingFace.similarity}%), mostrando advertencia pero permitiendo continuar`);
+        } else {
+          console.log("No se encontraron rostros similares en la colección");
+        }
+      } catch (error) {
+        console.error("Error al verificar rostro existente:", error);
+        // No retornamos error aquí para permitir continuar con el proceso
+      }
+    } else {
+      console.log("Omitiendo verificación de rostro existente debido a registro forzado");
+    }
+
     console.log(`Indexando rostro para empleado ${employeeId}. Tamaño de imagen: ${imageData.length} bytes`);
     
     try {
@@ -101,9 +183,7 @@ export async function POST(request: Request) {
             name,
             employee_id: employeeId,
             face_data: faceId,
-          })
-          .select()
-          .single();
+          });
 
         if (insertError) {
           console.error("Error al guardar en Supabase:", {
@@ -145,99 +225,29 @@ export async function POST(request: Request) {
           name: name,
           registeredAt: new Date().toISOString()
         },
-        message: "Empleado registrado exitosamente"
+        message: forceRegister 
+          ? "Empleado registrado exitosamente (registro forzado)" 
+          : "Empleado registrado exitosamente",
+        forced: forceRegister
       });
     } catch (error: unknown) {
       console.error("Error al indexar rostro:", error);
-      
-      // Tratamos el error como un objeto con propiedades name y message
-      const awsError = error as { name?: string; message?: string };
-      
-      // Manejar errores específicos de AWS
-      if (awsError.name === 'InvalidParameterException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Parámetros inválidos para AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 400 });
-      }
-      
-      if (awsError.name === 'InvalidImageFormatException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Formato de imagen no válido para AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 400 });
-      }
-      
-      if (awsError.name === 'ImageTooLargeException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Imagen demasiado grande para AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 400 });
-      }
-      
-      if (awsError.name === 'AccessDeniedException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Acceso denegado a AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 403 });
-      }
-      
-      if (awsError.name === 'ResourceNotFoundException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Recurso no encontrado en AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 404 });
-      }
-      
-      if (awsError.name === 'ThrottlingException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Límite de velocidad excedido en AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 429 });
-      }
-      
-      if (awsError.name === 'ProvisionedThroughputExceededException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'Capacidad aprovisionada excedida en AWS Rekognition',
-          details: { message: awsError.message }
-        }, { status: 429 });
-      }
-      
-      if (awsError.name === 'FaceAlreadyExistsException') {
-        return NextResponse.json({
-          ok: false,
-          error: 'El rostro ya existe en la colección',
-          details: { message: awsError.message }
-        }, { status: 409 });
-      }
-      
-      // Error genérico
-      return NextResponse.json({
-        ok: false,
-        error: 'Error al indexar rostro',
-        details: { 
-          message: awsError.message || 'Error desconocido',
-          name: awsError.name || 'UnknownError'
-        }
-      }, { status: 500 });
+      return NextResponse.json(
+        { 
+          message: "Error al indexar rostro", 
+          details: error instanceof Error ? error.message : "Error desconocido" 
+        },
+        { status: 500 }
+      );
     }
-  } catch (error) {
-    console.error("Error general en el endpoint:", error);
-    
-    return NextResponse.json({
-      ok: false,
-      error: 'Error interno del servidor',
-      details: error instanceof Error ? { 
-        message: error.message,
-        name: error.name
-      } : { message: 'Error desconocido' }
-    }, { status: 500 });
+  } catch (error: unknown) {
+    console.error("Error general:", error);
+    return NextResponse.json(
+      { 
+        message: "Error en el servidor", 
+        details: error instanceof Error ? error.message : "Error desconocido" 
+      },
+      { status: 500 }
+    );
   }
 } 

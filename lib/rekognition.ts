@@ -10,6 +10,98 @@ const rekognition = typeof window === 'undefined' ? new RekognitionClient({
 
 const COLLECTION_ID = "EmployeeFaces"
 
+/**
+ * Verifica si un rostro ya existe en la colección
+ * @param imageData Imagen en formato base64
+ * @param similarityThreshold Umbral de similitud (0-100)
+ * @returns Objeto con información del rostro encontrado o null si no se encuentra
+ */
+export async function checkFaceExists(imageData: string, similarityThreshold = 80) {
+  try {
+    // Verificar que la imagen tenga un formato válido
+    if (!imageData.startsWith('data:image/jpeg;base64,') && !imageData.startsWith('data:image/png;base64,')) {
+      throw new Error('Formato de imagen no válido. Debe ser JPEG o PNG en base64.');
+    }
+    
+    // Extraer los datos base64 sin el prefijo
+    const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+    
+    // Verificar que los datos no estén vacíos
+    if (!base64Data || base64Data.length < 100) {
+      throw new Error('Datos de imagen vacíos o demasiado pequeños.');
+    }
+    
+    // Verificar si rekognition está inicializado
+    if (!rekognition) {
+      throw new Error("Cliente de Rekognition no inicializado");
+    }
+    
+    // Verificar si la colección existe
+    try {
+      const listCommand = new ListCollectionsCommand({});
+      const collections = await rekognition.send(listCommand);
+      
+      if (!collections?.CollectionIds?.includes(COLLECTION_ID)) {
+        console.log(`La colección ${COLLECTION_ID} no existe. No hay rostros registrados.`);
+        return null;
+      }
+    } catch (error) {
+      console.error("Error al verificar la colección:", error);
+      throw error;
+    }
+    
+    const params = {
+      CollectionId: COLLECTION_ID,
+      Image: {
+        Bytes: Buffer.from(base64Data, "base64"),
+      },
+      MaxFaces: 5, // Buscar hasta 5 rostros similares
+      FaceMatchThreshold: similarityThreshold, // Umbral de similitud
+    }
+
+    console.log(`Buscando rostros similares con umbral de similitud: ${similarityThreshold}%`);
+    const command = new SearchFacesByImageCommand(params);
+    const response = await rekognition.send(command);
+    
+    // Si no hay coincidencias, retornar null
+    if (!response.FaceMatches || response.FaceMatches.length === 0) {
+      console.log("No se encontraron rostros similares en la colección");
+      return null;
+    }
+    
+    // Ordenar por similitud (de mayor a menor)
+    const matches = response.FaceMatches.sort((a, b) => 
+      (b.Similarity || 0) - (a.Similarity || 0)
+    );
+    
+    console.log(`Se encontraron ${matches.length} rostros similares. Mejor coincidencia: ${matches[0].Similarity}%, ID: ${matches[0].Face?.FaceId}`);
+    
+    // Retornar información del rostro más similar
+    return {
+      faceId: matches[0].Face?.FaceId,
+      similarity: matches[0].Similarity,
+      externalImageId: matches[0].Face?.ExternalImageId,
+      matches: matches.map(match => ({
+        faceId: match.Face?.FaceId,
+        similarity: match.Similarity,
+        externalImageId: match.Face?.ExternalImageId
+      }))
+    };
+  } catch (error) {
+    // Si el error es porque no hay rostros en la imagen, retornar null
+    if (error instanceof Error && 
+        (error.name === 'InvalidParameterException' || 
+         error.message.includes('No face detected') ||
+         error.message.includes('There are no faces in the collection'))) {
+      console.log("No se detectó ningún rostro en la imagen o la colección está vacía");
+      return null;
+    }
+    
+    console.error("Error al verificar rostro existente:", error);
+    throw error;
+  }
+}
+
 export async function indexFace(imageData: string, externalImageId: string) {
   try {
     // Verificar que la imagen tenga un formato válido
@@ -25,10 +117,15 @@ export async function indexFace(imageData: string, externalImageId: string) {
       throw new Error('Datos de imagen vacíos o demasiado pequeños.');
     }
     
+    // Verificar si rekognition está inicializado
+    if (!rekognition) {
+      throw new Error("Cliente de Rekognition no inicializado");
+    }
+    
     // Verificar si la colección existe
     try {
       const listCommand = new ListCollectionsCommand({});
-      const collections = await rekognition?.send(listCommand);
+      const collections = await rekognition.send(listCommand);
       
       if (!collections?.CollectionIds?.includes(COLLECTION_ID)) {
         console.log(`La colección ${COLLECTION_ID} no existe. Creándola...`);
@@ -52,7 +149,7 @@ export async function indexFace(imageData: string, externalImageId: string) {
 
     console.log(`Indexando rostro para ${externalImageId} en colección ${COLLECTION_ID}`);
     const command = new IndexFacesCommand(params)
-    const response = await rekognition?.send(command)
+    const response = await rekognition.send(command)
     
     if (!response) {
       throw new Error("No se recibió respuesta de AWS Rekognition");
@@ -76,10 +173,23 @@ export async function indexFace(imageData: string, externalImageId: string) {
 }
 
 export async function searchFace(imageData: string) {
+  // Extraer los datos base64 sin el prefijo
+  const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+  
+  // Verificar que los datos no estén vacíos
+  if (!base64Data || base64Data.length < 100) {
+    throw new Error('Datos de imagen vacíos o demasiado pequeños.');
+  }
+  
+  // Verificar si rekognition está inicializado
+  if (!rekognition) {
+    throw new Error("Cliente de Rekognition no inicializado");
+  }
+  
   const params = {
     CollectionId: COLLECTION_ID,
     Image: {
-      Bytes: Buffer.from(imageData.replace(/^data:image\/\w+;base64,/, ""), "base64"),
+      Bytes: Buffer.from(base64Data, "base64"),
     },
     MaxFaces: 1,
     FaceMatchThreshold: 95,
@@ -87,8 +197,12 @@ export async function searchFace(imageData: string) {
 
   try {
     const command = new SearchFacesByImageCommand(params)
-    const response = await rekognition?.send(command)
-    if (!response) throw new Error("Failed to get response from Rekognition")
+    const response = await rekognition.send(command)
+    
+    if (!response) {
+      throw new Error("No se recibió respuesta de AWS Rekognition");
+    }
+    
     return response.FaceMatches?.[0]?.Face?.FaceId
   } catch (error) {
     console.error("Error searching face:", error)
@@ -98,11 +212,17 @@ export async function searchFace(imageData: string) {
 
 export async function createCollection() {
   try {
+    // Verificar si rekognition está inicializado
+    if (!rekognition) {
+      throw new Error("Cliente de Rekognition no inicializado");
+    }
+    
     // Primero verificamos si la colección ya existe
     const listCommand = new ListCollectionsCommand({});
-    const collections = await rekognition?.send(listCommand);
+    const collections = await rekognition.send(listCommand);
     
     if (collections?.CollectionIds?.includes(COLLECTION_ID)) {
+      console.log(`La colección ${COLLECTION_ID} ya existe`);
       return { message: "Collection already exists" };
     }
 
@@ -111,7 +231,8 @@ export async function createCollection() {
       CollectionId: COLLECTION_ID,
     });
     
-    await rekognition?.send(command);
+    await rekognition.send(command);
+    console.log(`Colección ${COLLECTION_ID} creada exitosamente`);
     return { message: "Collection created successfully" };
   } catch (error) {
     console.error("Error creating collection:", error);

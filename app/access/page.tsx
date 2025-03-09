@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
-import LivenessDetection from '../../components/LivenessDetection'
+import LivenessDetection from '@/components/LivenessDetection'
 
 interface LastAccessLog {
   type: 'check_in' | 'check_out';
