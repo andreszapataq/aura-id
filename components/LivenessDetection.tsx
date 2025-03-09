@@ -29,6 +29,7 @@ export default function LivenessDetection({
   const MAX_RETRIES = 3;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [status, setStatus] = useState<'success' | 'error' | null>(null);
 
   // Función para crear una nueva sesión
   const createNewSession = useCallback(async () => {
@@ -240,7 +241,7 @@ export default function LivenessDetection({
       if (!data || Object.keys(data).length === 0) {
         console.error('Datos de evaluación vacíos o inválidos');
         setError('No se recibieron datos de evaluación del servidor. Por favor, intente nuevamente.');
-        throw new Error('Datos de evaluación vacíos o inválidos');
+        throw new Error('Datos de evaluación inválidos: ' + JSON.stringify(data));
       }
       
       // Si la sesión está en estado CREATED, mostrar el enlace para completarla
@@ -261,8 +262,15 @@ export default function LivenessDetection({
       let referenceImage = '';
       
       // Verificar si el servidor indica que debemos capturar la imagen en el cliente
-      if (data.captureImageInClient) {
-        console.log('El servidor indica que debemos capturar la imagen en el cliente');
+      if (data.captureImageInClient || (!data.referenceImage?.Bytes)) {
+        console.log('El servidor indica que debemos capturar la imagen en el cliente o no hay imagen de referencia');
+        
+        // Cambiar el estado a éxito para mostrar el mensaje de mantener posición
+        setStatus('success');
+        
+        // Esperar un momento para que el usuario mantenga la posición
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
         const capturedImage = await captureImageFromWebcam();
         
         if (!capturedImage) {
@@ -473,13 +481,37 @@ export default function LivenessDetection({
           } as Record<string, unknown>
         }
       />
+      
+      {status === 'success' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-70 text-white p-4 z-10">
+          <div className="bg-green-500 rounded-full p-2 mb-4">
+            <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+          </div>
+          <p className="text-lg font-bold mb-2">¡Verificación exitosa!</p>
+          <p className="text-center mb-4">Mantenga su posición mientras capturamos su imagen...</p>
+          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+            <div className="bg-green-600 h-2.5 rounded-full animate-[progress_3s_ease-in-out]" style={{ width: '100%' }}></div>
+          </div>
+        </div>
+      )}
+      
       <style jsx>{`
         .liveness-container {
           width: 100%;
           max-width: 500px;
           margin: 0 auto;
-          border-radius: 8px;
-          overflow: hidden;
+          position: relative;
+        }
+        
+        @keyframes progress {
+          0% {
+            width: 0%;
+          }
+          100% {
+            width: 100%;
+          }
         }
       `}</style>
     </div>

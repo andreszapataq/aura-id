@@ -10,11 +10,12 @@ interface LastAccessLog {
 }
 
 export default function Access() {
+  const [showLivenessDetection, setShowLivenessDetection] = useState(false)
   const [message, setMessage] = useState("")
-  const [lastLog, setLastLog] = useState<LastAccessLog | null>(null)
-  const [showLivenessDetection, setShowLivenessDetection] = useState(true) // Iniciar con verificación de presencia activa
   const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('checking')
-  const [verifiedImage, setVerifiedImage] = useState<string | null>(null)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [lastAccessLog, setLastAccessLog] = useState<LastAccessLog | null>(null)
 
   // Iniciar verificación de presencia automáticamente al cargar la página
   useEffect(() => {
@@ -22,11 +23,38 @@ export default function Access() {
     setLivenessStatus('checking')
   }, [])
 
-  function handleLivenessSuccess(referenceImage: string) {
-    setVerifiedImage(referenceImage)
-    setLivenessStatus('success')
-    setShowLivenessDetection(false)
-    setMessage("Verificación exitosa. Ahora puede registrar entrada o salida.")
+  function handleLivenessSuccess(referenceImage: string, sessionId: string) {
+    console.log("Verificación exitosa con imagen:", referenceImage.substring(0, 50) + "...");
+    console.log("ID de sesión:", sessionId);
+    
+    // Verificar que la imagen sea válida
+    if (!referenceImage || referenceImage === 'data:image/jpeg;base64,undefined' || referenceImage === 'data:image/jpeg;base64,') {
+      console.error("Imagen de referencia inválida recibida en el acceso");
+      setMessage("Error: La imagen capturada no es válida. Por favor, intente nuevamente.");
+      setLivenessStatus('failed');
+      return;
+    }
+    
+    // Verificar que la imagen tenga un formato válido
+    if (!referenceImage.startsWith('data:image/jpeg;base64,') && !referenceImage.startsWith('data:image/png;base64,')) {
+      console.error("Formato de imagen no válido:", referenceImage.substring(0, 30));
+      setMessage("Error: El formato de la imagen no es válido. Por favor, intente nuevamente.");
+      setLivenessStatus('failed');
+      return;
+    }
+    
+    // Verificar que la imagen tenga un tamaño razonable
+    if (referenceImage.length < 1000) {
+      console.error("Imagen demasiado pequeña:", referenceImage.length, "bytes");
+      setMessage("Error: La imagen capturada es demasiado pequeña. Por favor, intente nuevamente.");
+      setLivenessStatus('failed');
+      return;
+    }
+    
+    console.log("Imagen válida recibida, tamaño:", referenceImage.length, "bytes");
+    setCapturedImage(referenceImage);
+    setLivenessStatus('success');
+    setShowLivenessDetection(false);
   }
 
   function handleLivenessError(error: Error) {
@@ -107,23 +135,30 @@ export default function Access() {
   }
 
   async function handleAccess(type: "check_in" | "check_out") {
-    if (livenessStatus !== 'success' || !verifiedImage) {
-      setMessage("Debe completar la verificación de presencia primero")
-      return
+    setIsLoading(true);
+    setMessage("");
+    
+    if (!capturedImage) {
+      setMessage("Por favor, complete la verificación de identidad primero");
+      setIsLoading(false);
+      return;
     }
-
+    
     try {
-      const searchResponse = await fetch('/api/search-face', {
-        method: 'POST',
+      // Buscar empleado por rostro
+      const response = await fetch("/api/search-face", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ imageData: verifiedImage }),
+        body: JSON.stringify({
+          imageData: capturedImage,
+        }),
       });
 
-      const searchData = await searchResponse.json();
+      const searchData = await response.json();
 
-      if (!searchResponse.ok) {
+      if (!response.ok) {
         throw new Error(searchData.error || 'Failed to search face');
       }
 
@@ -168,11 +203,11 @@ export default function Access() {
           todayAccess.length > 0;
 
         // Manejar registro incompleto del día anterior
-        if (lastLog && lastLog.type === "check_in") {
-          const lastAccessDate = new Date(lastLog.timestamp);
+        if (lastAccessLog && lastAccessLog.type === "check_in") {
+          const lastAccessDate = new Date(lastAccessLog.timestamp);
           const isLastAccessToday = lastAccessDate >= new Date(startOfDay);
           
-          if (!isLastAccessToday && lastLog.type === "check_in") {
+          if (!isLastAccessToday && lastAccessLog.type === "check_in") {
             // Registrar salida automática del día anterior
             await supabase.from("access_logs").insert({
               employee_id: employees.id,
@@ -221,11 +256,11 @@ export default function Access() {
         );
 
         setMessage(welcomeMessage);
-        setLastLog({ type, timestamp: now.toISOString() });
+        setLastAccessLog({ type, timestamp: now.toISOString() });
         
         // Resetear el estado de verificación después de un registro exitoso
         setLivenessStatus('none');
-        setVerifiedImage(null);
+        setCapturedImage(null);
         // Mostrar nuevamente la verificación de presencia para un nuevo registro
         setTimeout(() => {
           setShowLivenessDetection(true);
@@ -235,6 +270,8 @@ export default function Access() {
     } catch (error) {
       console.error("Error durante el reconocimiento facial:", error)
       setMessage("Ocurrió un error. Por favor, inténtalo de nuevo o contacta a soporte técnico.")
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -245,74 +282,76 @@ export default function Access() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <h1 className="text-3xl font-bold mb-8">Control de Acceso</h1>
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        {showLivenessDetection ? (
-          <LivenessDetection
-            onSuccess={handleLivenessSuccess}
-            onError={handleLivenessError}
-            onCancel={handleLivenessCancel}
-          />
-        ) : (
-          <div className="space-y-4">
-            {livenessStatus === 'success' && (
-              <div className="mb-4 p-4 bg-green-50 rounded-lg text-center">
-                <div className="text-green-600 font-semibold">
-                  ✓ Verificación de presencia exitosa
-                </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  Ahora puede registrar su entrada o salida
-                </p>
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Control de Acceso</h1>
+      
+      {message && (
+        <div className={`p-4 mb-4 rounded-lg ${message.includes("Error") || message.includes("error") ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+          {message}
+        </div>
+      )}
+      
+      {isLoading && (
+        <div className="flex justify-center items-center my-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          <span className="ml-2">Procesando...</span>
+        </div>
+      )}
+      
+      {showLivenessDetection ? (
+        <LivenessDetection
+          onSuccess={handleLivenessSuccess}
+          onError={handleLivenessError}
+          onCancel={handleLivenessCancel}
+        />
+      ) : (
+        <div className="space-y-4">
+          {livenessStatus === 'success' && (
+            <div className="mb-4 p-4 bg-green-50 rounded-lg text-center">
+              <div className="text-green-600 font-semibold">
+                ✓ Verificación de presencia exitosa
               </div>
-            )}
-            
-            <div className="flex space-x-4">
-              <button
-                onClick={() => handleAccess("check_in")}
-                className={`w-full font-bold py-2 px-4 rounded ${
-                  livenessStatus === 'success'
-                    ? "bg-green-500 hover:bg-green-600 text-white"
-                    : "bg-gray-300 cursor-not-allowed text-gray-500"
-                }`}
-                disabled={livenessStatus !== 'success'}
-              >
-                Entrada
-              </button>
-              <button
-                onClick={() => handleAccess("check_out")}
-                className={`w-full font-bold py-2 px-4 rounded ${
-                  livenessStatus === 'success'
-                    ? "bg-red-500 hover:bg-red-600 text-white"
-                    : "bg-gray-300 cursor-not-allowed text-gray-500"
-                }`}
-                disabled={livenessStatus !== 'success'}
-              >
-                Salida
-              </button>
+              <p className="text-sm text-gray-600 mt-2">
+                Ahora puede registrar su entrada o salida
+              </p>
             </div>
-            
-            {livenessStatus === 'failed' && (
-              <button
-                onClick={reiniciarVerificacion}
-                className="w-full mt-4 font-bold py-2 px-4 rounded bg-blue-500 hover:bg-blue-600 text-white"
-              >
-                Reintentar Verificación
-              </button>
-            )}
-            
-            {message && (
-              <div className={`mt-4 p-4 rounded-lg text-center ${
-                message.includes("error") || message.includes("verifica")
-                  ? "bg-red-100 text-red-800"
-                  : "bg-blue-100 text-blue-800"
-              }`}>
-                {message}
-              </div>
-            )}
+          )}
+          
+          <div className="flex space-x-4">
+            <button
+              onClick={() => handleAccess("check_in")}
+              className={`w-full font-bold py-2 px-4 rounded ${
+                livenessStatus === 'success'
+                  ? "bg-green-500 hover:bg-green-600 text-white"
+                  : "bg-gray-300 cursor-not-allowed text-gray-500"
+              }`}
+              disabled={livenessStatus !== 'success'}
+            >
+              Entrada
+            </button>
+            <button
+              onClick={() => handleAccess("check_out")}
+              className={`w-full font-bold py-2 px-4 rounded ${
+                livenessStatus === 'success'
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : "bg-gray-300 cursor-not-allowed text-gray-500"
+              }`}
+              disabled={livenessStatus !== 'success'}
+            >
+              Salida
+            </button>
           </div>
-        )}
-      </div>
+          
+          {livenessStatus === 'failed' && (
+            <button
+              onClick={reiniciarVerificacion}
+              className="w-full mt-4 font-bold py-2 px-4 rounded bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              Reintentar Verificación
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

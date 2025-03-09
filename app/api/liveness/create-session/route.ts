@@ -13,7 +13,6 @@ export async function POST() {
   try {
     console.log("Creating liveness session with config:", {
       region: process.env.AWS_REGION,
-      bucket: process.env.AWS_S3_BUCKET,
       hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
       hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY
     });
@@ -28,18 +27,11 @@ export async function POST() {
     if (!process.env.AWS_SECRET_ACCESS_KEY) {
       throw new Error('AWS_SECRET_ACCESS_KEY is not configured');
     }
-    if (!process.env.AWS_S3_BUCKET) {
-      throw new Error('AWS_S3_BUCKET is not configured');
-    }
     
+    // Crear sesión sin configuración de almacenamiento en S3
     const command = new CreateFaceLivenessSessionCommand({
       ClientRequestToken: `session-${Date.now()}`,
-      Settings: {
-        OutputConfig: {
-          S3Bucket: process.env.AWS_S3_BUCKET,
-          S3KeyPrefix: 'liveness-sessions/'
-        }
-      },
+      // No incluimos OutputConfig para evitar almacenar imágenes en S3
       // Configuración para Amplify
       KmsKeyId: process.env.AWS_KMS_KEY_ID, // Opcional, si usas KMS
     });
@@ -47,9 +39,18 @@ export async function POST() {
     const response = await rekognition.send(command);
     console.log("Liveness session created:", response.SessionId);
     
+    // Generar URL para verificación por correo
+    const baseUrl = 'https://liveness.rekognition.amazonaws.com/';
+    const region = process.env.AWS_REGION || 'us-east-1';
+    const sessionId = response.SessionId;
+    
+    // Construir la URL completa para la verificación por correo
+    const sessionUrl = `${baseUrl}?region=${region}&sessionId=${sessionId}`;
+    
     return NextResponse.json({
       ok: true,
-      sessionId: response.SessionId
+      sessionId: response.SessionId,
+      sessionUrl: sessionUrl
     });
   } catch (error) {
     console.error("Error creating liveness session:", error);

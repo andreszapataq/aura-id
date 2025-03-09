@@ -84,15 +84,11 @@ export async function POST(request: Request) {
     
     // Verificar si tenemos una imagen de referencia
     if (!response.ReferenceImage || !response.ReferenceImage.Bytes) {
-      console.error("No se encontró imagen de referencia o está vacía:", {
-        hasReferenceImage: !!response.ReferenceImage,
-        hasBytes: response.ReferenceImage ? !!response.ReferenceImage.Bytes : false
-      });
+      console.log("No se encontró imagen de referencia o está vacía. Solicitando captura en el cliente.");
       
-      // A pesar de no tener imagen de referencia, si el estado es SUCCEEDED, 
-      // devolvemos una respuesta exitosa con un indicador para capturar la imagen en el cliente
+      // Para los Check In/Out diarios, siempre solicitamos capturar la imagen en el cliente
       if (response.Status === 'SUCCEEDED') {
-        console.log("Sesión exitosa pero sin imagen de referencia. Solicitando captura de imagen en el cliente.");
+        console.log("Sesión exitosa. Solicitando captura de imagen en el cliente.");
         return NextResponse.json({
           ok: true,
           status: response.Status,
@@ -106,7 +102,8 @@ export async function POST(request: Request) {
         ok: false,
         status: response.Status,
         confidence: response.Confidence,
-        error: 'No se encontró imagen de referencia o está vacía'
+        error: 'No se encontró imagen de referencia o está vacía',
+        captureImageInClient: true
       });
     }
     

@@ -1,6 +1,47 @@
 import { NextResponse } from 'next/server';
 import { indexFace, checkFaceExists } from '@/lib/rekognition';
 import { supabase } from '@/lib/supabase';
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+// Cliente de S3 para almacenar snapshots iniciales
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+// Función para guardar imagen en S3
+async function saveImageToS3(imageData: string, employeeId: string): Promise<string> {
+  try {
+    // Extraer los datos base64 sin el prefijo
+    const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Generar una clave única para el objeto en S3
+    const key = `employee-snapshots/${employeeId}/${Date.now()}.jpg`;
+    
+    // Configurar el comando para subir el objeto a S3
+    const command = new PutObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET!,
+      Key: key,
+      Body: buffer,
+      ContentType: 'image/jpeg',
+      ContentEncoding: 'base64',
+    });
+    
+    // Subir el objeto a S3
+    await s3Client.send(command);
+    console.log(`Snapshot inicial guardado en S3: ${key}`);
+    
+    // Devolver la URL del objeto
+    return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+  } catch (error) {
+    console.error("Error al guardar imagen en S3:", error);
+    throw error;
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -156,6 +197,17 @@ export async function POST(request: Request) {
     console.log(`Indexando rostro para empleado ${employeeId}. Tamaño de imagen: ${imageData.length} bytes`);
     
     try {
+      // Guardar el snapshot inicial en S3
+      let snapshotUrl = "";
+      try {
+        snapshotUrl = await saveImageToS3(imageData, employeeId);
+        console.log(`Snapshot inicial guardado exitosamente: ${snapshotUrl}`);
+      } catch (s3Error) {
+        console.error("Error al guardar snapshot inicial en S3:", s3Error);
+        // Continuamos con el proceso aunque falle el guardado del snapshot
+      }
+      
+      // Indexar el rostro en AWS Rekognition
       const faceId = await indexFace(imageData, employeeId);
       
       if (!faceId) {
@@ -171,10 +223,15 @@ export async function POST(request: Request) {
       
       // Guardar datos del empleado en Supabase
       try {
+        // Determinar si se pudo guardar el snapshot
+        const hasSnapshot = !!snapshotUrl;
+        
         console.log("Intentando guardar en Supabase:", {
           name,
           employee_id: employeeId,
-          face_data: faceId
+          face_data: faceId,
+          snapshot_url: snapshotUrl || null,
+          has_snapshot: hasSnapshot
         });
         
         const { error: insertError } = await supabase
@@ -183,6 +240,8 @@ export async function POST(request: Request) {
             name,
             employee_id: employeeId,
             face_data: faceId,
+            snapshot_url: snapshotUrl || null, // Guardar la URL del snapshot si está disponible
+            has_snapshot: hasSnapshot // Campo adicional para indicar si se guardó el snapshot
           });
 
         if (insertError) {
@@ -223,7 +282,8 @@ export async function POST(request: Request) {
         employee: {
           id: employeeId,
           name: name,
-          registeredAt: new Date().toISOString()
+          registeredAt: new Date().toISOString(),
+          snapshotUrl: snapshotUrl || null
         },
         message: forceRegister 
           ? "Empleado registrado exitosamente (registro forzado)" 

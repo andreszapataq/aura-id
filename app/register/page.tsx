@@ -20,7 +20,7 @@ export default function Register() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
   const [countdown, setCountdown] = useState(5)
-  const [registeredEmployee, setRegisteredEmployee] = useState<{name: string, id: string, registeredAt: string} | null>(null)
+  const [registeredEmployee, setRegisteredEmployee] = useState<{name: string, id: string, registeredAt: string, snapshotUrl?: string} | null>(null)
   const [isOrphanFace, setIsOrphanFace] = useState(false)
 
   async function startVideo() {
@@ -166,7 +166,8 @@ export default function Register() {
                 year: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit'
-              })
+              }),
+              snapshotUrl: data.employeeData.snapshot_url || null
             });
           } else if (data.isOrphan) {
             // Caso especial: rostro huérfano detectado (existe en AWS pero no en la base de datos)
@@ -217,7 +218,8 @@ export default function Register() {
       setRegisteredEmployee({
         name: data.employee?.name || name,
         id: data.employee?.id || employeeId,
-        registeredAt: registrationDate
+        registeredAt: registrationDate,
+        snapshotUrl: data.employee?.snapshotUrl || null
       });
       
       // Iniciar cuenta regresiva para redirección
@@ -362,7 +364,8 @@ export default function Register() {
                         setRegisteredEmployee({
                           name: data.employee?.name || name,
                           id: data.employee?.id || employeeId,
-                          registeredAt: registrationDate
+                          registeredAt: registrationDate,
+                          snapshotUrl: data.employee?.snapshotUrl || null
                         });
                         
                         // Iniciar cuenta regresiva
@@ -437,41 +440,58 @@ export default function Register() {
       )}
       
       {success && (
-        <div className="bg-green-50 border-2 border-green-400 text-green-800 px-6 py-5 rounded-lg mb-6 text-center">
-          <div className="flex items-center justify-center mb-4">
-            <div className="bg-green-100 rounded-full p-2 mr-3">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-              </svg>
-            </div>
-            <span className="font-bold text-xl">¡Registro Exitoso!</span>
-          </div>
-          
-          {registeredEmployee && (
-            <div className="mb-4 bg-white p-4 rounded-lg border border-green-200">
-              <h3 className="font-semibold text-lg mb-2 text-green-700">Detalles del Empleado</h3>
-              <div className="grid grid-cols-2 gap-2 text-left">
-                <div className="text-gray-600">Nombre:</div>
-                <div className="font-medium">{registeredEmployee.name}</div>
-                
-                <div className="text-gray-600">ID de Empleado:</div>
-                <div className="font-medium">{registeredEmployee.id}</div>
-                
-                <div className="text-gray-600">Fecha de Registro:</div>
-                <div className="font-medium">{registeredEmployee.registeredAt}</div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="text-center">
+              <div className="bg-green-100 p-3 rounded-full inline-flex mb-4">
+                <svg className="h-12 w-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
               </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">¡Registro Exitoso!</h2>
+              <p className="text-gray-600 mb-6">
+                El empleado ha sido registrado correctamente en el sistema.
+              </p>
+              
+              {registeredEmployee && (
+                <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                  <div className="grid grid-cols-2 gap-2 text-sm mb-4">
+                    <div className="font-semibold text-left">Nombre:</div>
+                    <div className="text-left">{registeredEmployee.name}</div>
+                    <div className="font-semibold text-left">ID:</div>
+                    <div className="text-left">{registeredEmployee.id}</div>
+                    <div className="font-semibold text-left">Registrado el:</div>
+                    <div className="text-left">{registeredEmployee.registeredAt}</div>
+                  </div>
+                  
+                  {registeredEmployee.snapshotUrl && (
+                    <div className="mt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Imagen de registro:</p>
+                      <div className="relative rounded overflow-hidden">
+                        <Image 
+                          src={registeredEmployee.snapshotUrl} 
+                          alt="Imagen de registro" 
+                          width={300}
+                          height={300}
+                          className="mx-auto object-cover"
+                          unoptimized={true}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <p className="text-sm text-gray-500 mb-4">
+                Redirigiendo a la página principal en <span className="font-bold">{countdown}</span> segundos...
+              </p>
+              <button
+                onClick={() => router.push("/")}
+                className="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white rounded"
+              >
+                Ir a la página principal
+              </button>
             </div>
-          )}
-          
-          <div className="bg-green-100 p-3 rounded-lg">
-            <p className="mb-2">Redirigiendo a la página principal en <strong className="text-green-700">{countdown}</strong> segundos...</p>
-            
-            <button 
-              onClick={() => router.push("/")}
-              className="mt-2 bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-md transition-colors duration-300"
-            >
-              Ir a la página principal ahora
-            </button>
           </div>
         </div>
       )}
