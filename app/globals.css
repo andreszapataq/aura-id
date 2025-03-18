@@ -152,15 +152,45 @@
   }
   
   .input {
-    @apply block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50;
+    @apply block w-full px-5 py-3.5 rounded-lg border border-gray-300 shadow-sm
+           text-gray-800 placeholder-gray-400
+           focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500 focus:ring-opacity-30
+           focus:shadow-md hover:border-gray-400
+           transition-all duration-200 ease-in-out;
+    background-image: linear-gradient(to top, #f9fafb 0%, #ffffff 100%);
+  }
+  
+  .input::placeholder {
+    @apply text-gray-400 opacity-70 transition-opacity duration-200;
+  }
+  
+  .input:focus::placeholder {
+    @apply text-blue-300 opacity-50;
+  }
+
+  .input:focus {
+    background-image: linear-gradient(to top, #f3f4f6 0%, #ffffff 100%);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+
+  .input:hover:not(:focus) {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+  
+  .input-lg {
+    @apply py-4 px-6 text-lg;
+  }
+
+  .input-sm {
+    @apply py-2 px-4 text-sm;
   }
   
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-semibold text-gray-700 mb-2;
   }
   
   .input-error {
-    @apply block w-full rounded-md border-red-300 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50;
+    @apply border-red-300 focus:border-red-500 focus:ring-red-400 text-red-900 placeholder-red-300;
   }
   
   .error-message {

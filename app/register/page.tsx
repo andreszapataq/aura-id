@@ -265,7 +265,7 @@ export default function Register() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="input"
+                  className="input focus:shadow-blue-100"
                   placeholder="Ingrese nombre completo"
                   required
                 />
@@ -280,7 +280,7 @@ export default function Register() {
                   type="text"
                   value={employeeId}
                   onChange={(e) => setEmployeeId(e.target.value)}
-                  className="input"
+                  className="input focus:shadow-blue-100"
                   placeholder="Ej: EMP001"
                   required
                 />
