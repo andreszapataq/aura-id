@@ -55,7 +55,8 @@ export default function Register() {
 
     try {
       if (!livenessStatus || !image) {
-        throw new Error("Debe completar la prueba de detección facial")
+        setErrorMessage("Debe completar la prueba de detección facial")
+        return
       }
 
       const response = await fetch("/api/index-face", {
@@ -73,7 +74,8 @@ export default function Register() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "Error al registrar empleado")
+        setErrorMessage(data.error || "Error al registrar empleado")
+        return
       }
 
       setRegisteredEmployee({
@@ -94,8 +96,8 @@ export default function Register() {
         })
       }, 1000)
     } catch (error) {
-      console.error("Error al registrar:", error)
-      setErrorMessage(error instanceof Error ? error.message : "Error desconocido")
+      console.error("Error inesperado al registrar:", error)
+      setErrorMessage("Ha ocurrido un error inesperado. Por favor, inténtelo nuevamente.")
     } finally {
       setIsLoading(false)
     }

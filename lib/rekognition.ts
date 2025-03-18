@@ -239,3 +239,57 @@ export async function createCollection() {
     throw error;
   }
 }
+
+/**
+ * Busca un rostro en la colección de empleados
+ * @param imageData Imagen en formato base64
+ * @returns Objeto con información del rostro encontrado o null si no se encuentra
+ */
+export async function searchFacesByImage(imageData: string) {
+  try {
+    // Verificar que la imagen tenga un formato válido
+    if (!imageData.startsWith('data:image/jpeg;base64,') && !imageData.startsWith('data:image/png;base64,')) {
+      throw new Error('Formato de imagen no válido. Debe ser JPEG o PNG en base64.');
+    }
+    
+    // Extraer los datos base64 sin el prefijo
+    const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+    
+    // Verificar que los datos no estén vacíos
+    if (!base64Data || base64Data.length < 100) {
+      throw new Error('Datos de imagen vacíos o demasiado pequeños.');
+    }
+    
+    // Verificar si rekognition está inicializado
+    if (!rekognition) {
+      throw new Error("Cliente de Rekognition no inicializado");
+    }
+    
+    const params = {
+      CollectionId: COLLECTION_ID,
+      Image: {
+        Bytes: Buffer.from(base64Data, 'base64')
+      },
+      FaceMatchThreshold: 90,
+      MaxFaces: 1
+    };
+    
+    const command = new SearchFacesByImageCommand(params);
+    const response = await rekognition.send(command);
+    
+    if (!response.FaceMatches || response.FaceMatches.length === 0) {
+      return { status: 'FACE_NOT_FOUND' };
+    }
+    
+    const bestMatch = response.FaceMatches[0];
+    return {
+      status: 'SUCCESS',
+      faceId: bestMatch.Face?.FaceId,
+      similarity: bestMatch.Similarity,
+      boundingBox: bestMatch.Face?.BoundingBox
+    };
+  } catch (error) {
+    console.error("Error al buscar rostro:", error);
+    return { status: 'ERROR', error };
+  }
+}

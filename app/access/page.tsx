@@ -133,9 +133,28 @@ export default function Access() {
         }),
       });
       
+      // Comprobar si la respuesta es JSON antes de analizarla
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("La respuesta no es JSON:", await response.text());
+        throw new Error("Error en el servidor: respuesta no válida");
+      }
+      
       const data = await response.json();
       
       if (!response.ok) {
+        // Manejo especial para errores de registro consecutivo
+        if (data.error && (
+            data.error.includes("No puede registrar entrada dos veces seguidas") || 
+            data.error.includes("No puede registrar salida dos veces seguidas")
+        )) {
+          setMessage({ 
+            text: data.error, 
+            isError: true 
+          });
+          return; // Importante: no lanzar una excepción para este caso específico
+        }
+        
         throw new Error(data.error || "Error en el registro de acceso");
       }
       
@@ -167,7 +186,7 @@ export default function Access() {
     } catch (error) {
       console.error("Error al registrar acceso:", error);
       setMessage({ 
-        text: error instanceof Error ? error.message : "Error desconocido", 
+        text: "Error de conexión con el servidor. Por favor, inténtelo nuevamente más tarde.", 
         isError: true 
       });
     } finally {
@@ -236,7 +255,7 @@ export default function Access() {
                       <motion.button
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.98 }}
-                        className="btn btn-success h-16 text-lg"
+                        className="btn h-16 text-lg bg-green-500 text-white hover:bg-green-600 shadow-md border-0 relative overflow-hidden transition-all duration-300 group"
                         onClick={() => registerAccess("check_in")}
                         disabled={loading}
                       >
@@ -247,10 +266,13 @@ export default function Access() {
                           </div>
                         ) : (
                           <>
-                            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                            </svg>
-                            Registrar Entrada
+                            <div className="absolute inset-0 bg-green-600 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                            <div className="relative flex items-center justify-center">
+                              <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                              </svg>
+                              Registrar Entrada
+                            </div>
                           </>
                         )}
                       </motion.button>
@@ -258,7 +280,7 @@ export default function Access() {
                       <motion.button
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.98 }}
-                        className="btn btn-danger h-16 text-lg"
+                        className="btn h-16 text-lg bg-red-500 text-white hover:bg-red-600 shadow-md border-0 relative overflow-hidden transition-all duration-300 group"
                         onClick={() => registerAccess("check_out")}
                         disabled={loading}
                       >
@@ -269,10 +291,13 @@ export default function Access() {
                           </div>
                         ) : (
                           <>
-                            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                            </svg>
-                            Registrar Salida
+                            <div className="absolute inset-0 bg-red-600 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                            <div className="relative flex items-center justify-center">
+                              <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                              </svg>
+                              Registrar Salida
+                            </div>
                           </>
                         )}
                       </motion.button>

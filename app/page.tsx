@@ -5,19 +5,19 @@ import { motion } from 'framer-motion'
 
 // Iconos estilizados para cada sección
 const RegisterIcon = () => (
-  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <svg className="w-12 h-12 text-white group-hover:text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
   </svg>
 )
 
 const AccessIcon = () => (
-  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <svg className="w-12 h-12 text-white group-hover:text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
   </svg>
 )
 
 const ReportsIcon = () => (
-  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <svg className="w-12 h-12 text-white group-hover:text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
   </svg>
 )
@@ -63,10 +63,8 @@ export default function Home() {
         <motion.div variants={item}>
           <Link href="/register" className="block group h-full">
             <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-sky-500 transition-all duration-300">
-              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-sky-500 mb-6 group-hover:bg-white">
-                <div className="text-white group-hover:text-sky-500 transition-colors duration-300">
-                  <RegisterIcon />
-                </div>
+              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-sky-500 group-hover:bg-white transition-colors duration-300">
+                <RegisterIcon />
               </div>
               <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white">Registro</h2>
               <p className="text-gray-600 text-center max-w-xs group-hover:text-white">
@@ -79,10 +77,8 @@ export default function Home() {
         <motion.div variants={item}>
           <Link href="/access" className="block group h-full">
             <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-green-500 transition-all duration-300">
-              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-green-500 mb-6 group-hover:bg-white">
-                <div className="text-white group-hover:text-green-500 transition-colors duration-300">
-                  <AccessIcon />
-                </div>
+              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-green-500 group-hover:bg-white transition-colors duration-300">
+                <AccessIcon />
               </div>
               <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white">Control de Acceso</h2>
               <p className="text-gray-600 text-center max-w-xs group-hover:text-white">
@@ -95,10 +91,8 @@ export default function Home() {
         <motion.div variants={item}>
           <Link href="/reports" className="block group h-full">
             <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-purple-500 transition-all duration-300">
-              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-purple-500 mb-6 group-hover:bg-white">
-                <div className="text-white group-hover:text-purple-500 transition-colors duration-300">
-                  <ReportsIcon />
-                </div>
+              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-purple-500 group-hover:bg-white transition-colors duration-300">
+                <ReportsIcon />
               </div>
               <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white">Reportes</h2>
               <p className="text-gray-600 text-center max-w-xs group-hover:text-white">
