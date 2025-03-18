@@ -1,357 +1,361 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
-import LivenessDetection from '@/components/LivenessDetection'
+import { motion } from "framer-motion"
+import LivenessDetection from "@/components/LivenessDetection"
+
+type AccessType = "check_in" | "check_out" | null
 
 interface LastAccessLog {
-  type: 'check_in' | 'check_out';
+  name: string;
+  employeeId: string;
   timestamp: string;
+  type: string;
 }
 
 export default function Access() {
-  const [showLivenessDetection, setShowLivenessDetection] = useState(false)
-  const [message, setMessage] = useState("")
-  const [livenessStatus, setLivenessStatus] = useState<'none' | 'checking' | 'success' | 'failed'>('checking')
-  const [capturedImage, setCapturedImage] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [lastAccessLog, setLastAccessLog] = useState<LastAccessLog | null>(null)
+  const [accessType, setAccessType] = useState<AccessType>(null)
+  const [livenessStatus, setLivenessStatus] = useState<boolean>(false)
+  const [image, setImage] = useState<string | null>(null)
+  const [livenessSessionId, setLivenessSessionId] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [lastAccessLogs, setLastAccessLogs] = useState<LastAccessLog[]>([])
 
-  // Iniciar verificación de presencia automáticamente al cargar la página
   useEffect(() => {
-    setShowLivenessDetection(true)
-    setLivenessStatus('checking')
-  }, [])
+    // Iniciar la detección de presencia automáticamente
+    startLivenessDetection();
+    
+    // Cargar últimos registros de acceso
+    fetchLastAccessLogs();
+  }, []);
 
-  function handleLivenessSuccess(referenceImage: string, sessionId: string) {
-    console.log("Verificación exitosa con imagen:", referenceImage.substring(0, 50) + "...");
-    console.log("ID de sesión:", sessionId);
-    
-    // Verificar que la imagen sea válida
-    if (!referenceImage || referenceImage === 'data:image/jpeg;base64,undefined' || referenceImage === 'data:image/jpeg;base64,') {
-      console.error("Imagen de referencia inválida recibida en el acceso");
-      setMessage("Error: La imagen capturada no es válida. Por favor, intente nuevamente.");
-      setLivenessStatus('failed');
-      return;
-    }
-    
-    // Verificar que la imagen tenga un formato válido
-    if (!referenceImage.startsWith('data:image/jpeg;base64,') && !referenceImage.startsWith('data:image/png;base64,')) {
-      console.error("Formato de imagen no válido:", referenceImage.substring(0, 30));
-      setMessage("Error: El formato de la imagen no es válido. Por favor, intente nuevamente.");
-      setLivenessStatus('failed');
-      return;
-    }
-    
-    // Verificar que la imagen tenga un tamaño razonable
-    if (referenceImage.length < 1000) {
-      console.error("Imagen demasiado pequeña:", referenceImage.length, "bytes");
-      setMessage("Error: La imagen capturada es demasiado pequeña. Por favor, intente nuevamente.");
-      setLivenessStatus('failed');
-      return;
-    }
-    
-    console.log("Imagen válida recibida, tamaño:", referenceImage.length, "bytes");
-    setCapturedImage(referenceImage);
-    setLivenessStatus('success');
-    setShowLivenessDetection(false);
-  }
-
-  function handleLivenessError(error: Error) {
-    console.error("Error en verificación de presencia:", error)
-    setLivenessStatus('failed')
-    setShowLivenessDetection(false)
-    setMessage(`Error: ${error.message}`)
-  }
-
-  function handleLivenessCancel() {
-    // Al cancelar, reiniciar la verificación
-    setShowLivenessDetection(true)
-    setLivenessStatus('checking')
-  }
-
-  function getFirstName(fullName: string): string {
-    const nameParts = fullName.trim().split(' ');
-    
-    // Si tiene más de 2 palabras, tomar las dos primeras (nombre compuesto)
-    if (nameParts.length > 2) {
-      return `${nameParts[0]} ${nameParts[1]}`;
-    }
-    
-    // Si tiene solo 2 palabras o menos, tomar la primera
-    return nameParts[0];
-  }
-
-  function getWelcomeMessage(fullName: string, type: string, isFirstLog: boolean, isTemporaryExit: boolean) {
-    const timeOfDay = new Date().getHours();
-    const name = getFirstName(fullName);
-    
-    const messages = {
-      "check_in": {
-        first: [ // Primera entrada del día
-          timeOfDay < 12 
-            ? `¡Buenos días ${name}! Que tengas una excelente jornada.`
-            : timeOfDay < 19
-              ? `¡Buenas tardes ${name}! Bienvenido al trabajo.`
-              : `¡Buenas noches ${name}! Bienvenido a tu turno.`,
-          `¡Hola ${name}! Que sea un día productivo y positivo.`,
-          `¡Bienvenido ${name}! Hoy será un gran día.`,
-          `¡${name}, es un gusto verte! Comencemos este día con energía.`,
-        ],
-        return: [ // Regresos después de recesos
-          `¡Bienvenido de vuelta ${name}!`,
-          `¡${name}, continuemos con las actividades!`,
-          `¡Adelante ${name}, sigamos con el resto de la jornada!`,
-          `¡${name}, qué bueno tenerte de vuelta!`,
-        ]
-      },
-      "check_out": {
-        temporary: [ // Salidas temporales
-          `¡Hasta pronto ${name}!`,
-          `¡${name}, te esperamos de vuelta!`,
-          `¡Nos vemos en un rato ${name}!`,
-          `¡${name}, que disfrutes tu descanso!`,
-        ],
-        final: [ // Salida final del día
-          timeOfDay < 12 
-            ? `¡${name}, que tengas un excelente resto del día!`
-            : timeOfDay < 19
-              ? `¡${name}, que tengas una excelente tarde!`
-              : `¡${name}, que descanses! Nos vemos mañana.`,
-          `¡Gracias por tu trabajo de hoy ${name}!`,
-          `¡Hasta mañana ${name}! Disfruta tu tiempo libre.`,
-          `¡${name}, que tengas un buen descanso!`,
-        ]
+  const fetchLastAccessLogs = async () => {
+    try {
+      const response = await fetch('/api/access/last-logs?limit=5');
+      if (response.ok) {
+        const data = await response.json();
+        setLastAccessLogs(data.logs || []);
       }
-    };
-
-    if (type === "check_in") {
-      const messageArray = isFirstLog ? messages.check_in.first : messages.check_in.return;
-      return messageArray[Math.floor(Math.random() * messageArray.length)];
-    } else {
-      const messageArray = isTemporaryExit ? messages.check_out.temporary : messages.check_out.final;
-      return messageArray[Math.floor(Math.random() * messageArray.length)];
+    } catch (error) {
+      console.error("Error al cargar los últimos registros:", error);
     }
-  }
+  };
 
-  async function handleAccess(type: "check_in" | "check_out") {
-    setIsLoading(true);
-    setMessage("");
-    
-    if (!capturedImage) {
-      setMessage("Por favor, complete la verificación de identidad primero");
-      setIsLoading(false);
+  const startLivenessDetection = () => {
+    setLivenessStatus(false);
+    setImage(null);
+    setLivenessSessionId(null);
+    setMessage(null);
+  };
+
+  const handleLivenessSuccess = (referenceImage: string, sessionId: string) => {
+    // Verificar que la imagen sea válida
+    if (!referenceImage || 
+        referenceImage === 'data:image/jpeg;base64,undefined' || 
+        referenceImage === 'data:image/jpeg;base64,') {
+      setMessage({ 
+        text: "Error: La imagen capturada no es válida. Por favor, intente nuevamente.", 
+        isError: true 
+      });
       return;
     }
+    
+    // Verificar formato de imagen
+    if (!referenceImage.startsWith('data:image/jpeg;base64,') && 
+        !referenceImage.startsWith('data:image/png;base64,')) {
+      setMessage({ 
+        text: "Error: El formato de la imagen no es válido.", 
+        isError: true 
+      });
+      return;
+    }
+    
+    // Verificar tamaño de imagen
+    if (referenceImage.length < 1000) {
+      setMessage({ 
+        text: "Error: La imagen capturada es demasiado pequeña.", 
+        isError: true 
+      });
+      return;
+    }
+    
+    setLivenessStatus(true);
+    setImage(referenceImage);
+    setLivenessSessionId(sessionId);
+  };
+
+  const handleLivenessError = (error: Error) => {
+    console.error("Error en verificación facial:", error);
+    setMessage({ text: `Error: ${error.message}`, isError: true });
+    setLivenessStatus(false);
+  };
+
+  const handleLivenessCancel = () => {
+    setLivenessStatus(false);
+  };
+
+  const generateWelcomeMessage = (name: string, type: string): string => {
+    const hour = new Date().getHours();
+    let greeting = '';
+    
+    if (hour < 12) greeting = 'Buenos días';
+    else if (hour < 18) greeting = 'Buenas tardes';
+    else greeting = 'Buenas noches';
+    
+    if (type === 'check_in') {
+      return `¡${greeting}, ${name}! Bienvenido/a.`;
+    } else {
+      return `¡${greeting}, ${name}! Que tengas un buen día.`;
+    }
+  };
+
+  const registerAccess = async (type: AccessType) => {
+    if (!livenessStatus || !image) {
+      setMessage({ text: "Por favor, complete la verificación facial primero", isError: true });
+      return;
+    }
+    
+    setLoading(true);
+    setMessage(null);
+    setAccessType(type);
     
     try {
-      // Buscar empleado por rostro
-      const response = await fetch("/api/search-face", {
+      const response = await fetch("/api/access/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          imageData: capturedImage,
+          imageData: image,
+          type: type,
+          sessionId: livenessSessionId,
         }),
       });
-
-      const searchData = await response.json();
-
+      
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error(searchData.error || 'Failed to search face');
+        throw new Error(data.error || "Error en el registro de acceso");
       }
-
-      if (searchData.status === 'FACE_NOT_FOUND') {
-        setMessage("No estás registrado en el sistema. Por favor, contacta a RRHH para registrarte.");
-        return;
+      
+      // Si hay un registro pendiente de cierre del día anterior, se habrá generado automáticamente
+      if (data.autoCloseGenerated) {
+        setMessage({ 
+          text: "Se ha generado automáticamente un registro de salida para una entrada anterior sin salida registrada.", 
+          isError: false 
+        });
       }
-
-      if (searchData.faceId) {
-        const { data: employees, error } = await supabase
-          .from("employees")
-          .select("*")
-          .eq("face_data", searchData.faceId)
-          .maybeSingle()
-
-        if (error || !employees) {
-          if (error && !error.message.includes('no rows')) {
-            throw error;
-          }
-          setMessage("Tu rostro fue reconocido pero no se encontraron tus datos en el sistema. Por favor, contacta a un administrador.");
-          return;
-        }
-
-        // Obtener los registros del día actual
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+      
+      if (data.employee) {
+        const welcomeMessage = generateWelcomeMessage(data.employee.name, type || 'check_in');
+        setMessage({ text: welcomeMessage, isError: false });
         
-        const { data: todayAccess, error: accessError } = await supabase
-          .from("access_logs")
-          .select("*")
-          .eq("employee_id", employees.id)
-          .gte("timestamp", startOfDay)
-          .order("timestamp", { ascending: false });
-
-        if (accessError) throw accessError;
-
-        // Determinar si es el primer registro del día y si es una salida temporal
-        const isFirstLog = !todayAccess || todayAccess.length === 0;
-        const isTemporaryExit = type === "check_out" && 
-          today.getHours() < 17 && // Asumiendo que 17:00 es una hora típica de salida
-          todayAccess && 
-          todayAccess.length > 0;
-
-        // Manejar registro incompleto del día anterior
-        if (lastAccessLog && lastAccessLog.type === "check_in") {
-          const lastAccessDate = new Date(lastAccessLog.timestamp);
-          const isLastAccessToday = lastAccessDate >= new Date(startOfDay);
-          
-          if (!isLastAccessToday && lastAccessLog.type === "check_in") {
-            // Registrar salida automática del día anterior
-            await supabase.from("access_logs").insert({
-              employee_id: employees.id,
-              timestamp: new Date(lastAccessDate.getFullYear(), 
-                                lastAccessDate.getMonth(), 
-                                lastAccessDate.getDate(), 
-                                23, 59, 59).toISOString(),
-              type: "check_out",
-              auto_generated: true
-            });
-            
-            setMessage("Se registró automáticamente la salida del día anterior.");
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Mostrar mensaje por 3 segundos
-          }
-        }
-
-        // Validar el tipo de registro actual
-        if (todayAccess && todayAccess.length > 0) {
-          const lastAccessType = todayAccess[0].type;
-
-          // No permitir dos registros del mismo tipo consecutivos
-          if (type === lastAccessType) {
-            const actionType = type === "check_in" ? "entrada" : "salida";
-            setMessage(`No puedes registrar una ${actionType} dos veces seguidas. Por favor, registra una ${type === "check_in" ? "salida" : "entrada"}.`);
-            return;
-          }
-        }
-
-        // Registrar nuevo acceso
-        const now = new Date()
-        const { error: logError } = await supabase
-          .from("access_logs")
-          .insert({
-            employee_id: employees.id,
-            timestamp: now.toISOString(),
-            type: type,
-          })
-
-        if (logError) throw logError
-
-        const welcomeMessage = getWelcomeMessage(
-          employees.name,
-          type,
-          isFirstLog,
-          isTemporaryExit
-        );
-
-        setMessage(welcomeMessage);
-        setLastAccessLog({ type, timestamp: now.toISOString() });
-        
-        // Resetear el estado de verificación después de un registro exitoso
-        setLivenessStatus('none');
-        setCapturedImage(null);
-        // Mostrar nuevamente la verificación de presencia para un nuevo registro
-        setTimeout(() => {
-          setShowLivenessDetection(true);
-          setLivenessStatus('checking');
-        }, 5000); // Esperar 5 segundos antes de reiniciar la verificación
+        // Actualizar la lista de registros recientes
+        fetchLastAccessLogs();
+      } else {
+        setMessage({ 
+          text: "No se pudo identificar al empleado. Por favor, inténtelo nuevamente.", 
+          isError: true 
+        });
       }
+      
+      // Reiniciar para una nueva verificación después de 5 segundos
+      setTimeout(() => {
+        startLivenessDetection();
+      }, 5000);
     } catch (error) {
-      console.error("Error durante el reconocimiento facial:", error)
-      setMessage("Ocurrió un error. Por favor, inténtalo de nuevo o contacta a soporte técnico.")
+      console.error("Error al registrar acceso:", error);
+      setMessage({ 
+        text: error instanceof Error ? error.message : "Error desconocido", 
+        isError: true 
+      });
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }
-
-  function reiniciarVerificacion() {
-    setShowLivenessDetection(true);
-    setLivenessStatus('checking');
-    setMessage("");
-  }
+  };
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Control de Acceso</h1>
-      
-      {message && (
-        <div className={`p-4 mb-4 rounded-lg ${message.includes("Error") || message.includes("error") ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-          {message}
-        </div>
-      )}
-      
-      {isLoading && (
-        <div className="flex justify-center items-center my-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          <span className="ml-2">Procesando...</span>
-        </div>
-      )}
-      
-      {showLivenessDetection ? (
-        <LivenessDetection
-          onSuccess={handleLivenessSuccess}
-          onError={handleLivenessError}
-          onCancel={handleLivenessCancel}
-        />
-      ) : (
-        <div className="space-y-4">
-          {livenessStatus === 'success' && (
-            <div className="mb-4 p-4 bg-green-50 rounded-lg text-center">
-              <div className="text-green-600 font-semibold">
-                ✓ Verificación de presencia exitosa
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="container mx-auto px-4 py-12 max-w-7xl"
+    >
+      <div className="text-center mb-12">
+        <h1 className="text-3xl md:text-4xl font-bold mb-3 text-gray-900">Control de Acceso</h1>
+        <p className="text-gray-600 max-w-2xl mx-auto">
+          Registre su entrada y salida diaria a través del sistema de reconocimiento facial
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          <div className="card h-full">
+            <div className="flex flex-col h-full">
+              <h2 className="text-xl font-semibold mb-6">Verificación de Identidad</h2>
+
+              {message && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`mb-6 p-4 rounded-lg flex items-center ${
+                    message.isError ? "alert alert-error" : "alert alert-success"
+                  }`}
+                >
+                  <div className="flex items-center">
+                    {message.isError ? (
+                      <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                    <span>{message.text}</span>
+                  </div>
+                </motion.div>
+              )}
+
+              <div className="flex flex-col flex-grow justify-center items-center">
+                {!livenessStatus ? (
+                  <div className="w-full max-w-lg">
+                    <LivenessDetection
+                      onSuccess={handleLivenessSuccess}
+                      onError={handleLivenessError}
+                      onCancel={handleLivenessCancel}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center w-full">
+                    <p className="text-green-700 font-medium text-center mb-6">
+                      Verificación facial completada con éxito. Por favor, registre su entrada o salida:
+                    </p>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md">
+                      <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="btn btn-success h-16 text-lg"
+                        onClick={() => registerAccess("check_in")}
+                        disabled={loading}
+                      >
+                        {loading && accessType === "check_in" ? (
+                          <div className="flex items-center justify-center">
+                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                            Procesando...
+                          </div>
+                        ) : (
+                          <>
+                            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                            </svg>
+                            Registrar Entrada
+                          </>
+                        )}
+                      </motion.button>
+                      
+                      <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="btn btn-danger h-16 text-lg"
+                        onClick={() => registerAccess("check_out")}
+                        disabled={loading}
+                      >
+                        {loading && accessType === "check_out" ? (
+                          <div className="flex items-center justify-center">
+                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                            Procesando...
+                          </div>
+                        ) : (
+                          <>
+                            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            Registrar Salida
+                          </>
+                        )}
+                      </motion.button>
+                    </div>
+                    
+                    {!loading && (
+                      <button
+                        className="btn btn-outline mt-6"
+                        onClick={startLivenessDetection}
+                      >
+                        Reiniciar Verificación
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-gray-600 mt-2">
-                Ahora puede registrar su entrada o salida
-              </p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="card">
+          <h2 className="text-xl font-semibold mb-6">Últimos Registros</h2>
+          
+          {lastAccessLogs.length > 0 ? (
+            <div className="overflow-hidden">
+              <ul className="divide-y divide-gray-200">
+                {lastAccessLogs.map((log, index) => (
+                  <motion.li 
+                    key={index}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="py-4"
+                  >
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 mr-3">
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white ${
+                          log.type === 'check_in' ? 'bg-green-500' : 'bg-red-500'
+                        }`}>
+                          {log.type === 'check_in' ? (
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                            </svg>
+                          ) : (
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {log.name}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {log.employeeId} · {new Date(log.timestamp).toLocaleString('es-CO', {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <span className={`badge ${
+                          log.type === 'check_in' ? 'badge-green' : 'badge-red'
+                        }`}>
+                          {log.type === 'check_in' ? 'Entrada' : 'Salida'}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="text-center py-6 text-gray-500">
+              <svg className="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p>No hay registros recientes</p>
             </div>
           )}
-          
-          <div className="flex space-x-4">
-            <button
-              onClick={() => handleAccess("check_in")}
-              className={`w-full font-bold py-2 px-4 rounded ${
-                livenessStatus === 'success'
-                  ? "bg-green-500 hover:bg-green-600 text-white"
-                  : "bg-gray-300 cursor-not-allowed text-gray-500"
-              }`}
-              disabled={livenessStatus !== 'success'}
-            >
-              Entrada
-            </button>
-            <button
-              onClick={() => handleAccess("check_out")}
-              className={`w-full font-bold py-2 px-4 rounded ${
-                livenessStatus === 'success'
-                  ? "bg-red-500 hover:bg-red-600 text-white"
-                  : "bg-gray-300 cursor-not-allowed text-gray-500"
-              }`}
-              disabled={livenessStatus !== 'success'}
-            >
-              Salida
-            </button>
-          </div>
-          
-          {livenessStatus === 'failed' && (
-            <button
-              onClick={reiniciarVerificacion}
-              className="w-full mt-4 font-bold py-2 px-4 rounded bg-blue-500 hover:bg-blue-600 text-white"
-            >
-              Reintentar Verificación
-            </button>
-          )}
         </div>
-      )}
-    </div>
+      </div>
+    </motion.div>
   )
 }

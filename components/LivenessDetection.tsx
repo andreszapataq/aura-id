@@ -484,18 +484,66 @@ export default function LivenessDetection({
       
       {status === 'success' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-70 text-white p-4 z-10">
-          <div className="bg-green-500 rounded-full p-2 mb-4">
-            <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <div className="bg-green-500 rounded-full p-4 mb-4">
+            <svg className="h-10 w-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
             </svg>
           </div>
-          <p className="text-lg font-bold mb-2">¡Verificación exitosa!</p>
-          <p className="text-center mb-4">Mantenga su posición mientras capturamos su imagen...</p>
-          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
-            <div className="bg-green-600 h-2.5 rounded-full animate-[progress_3s_ease-in-out]" style={{ width: '100%' }}></div>
+          <p className="text-xl font-bold mb-2">¡Verificación exitosa!</p>
+          <p className="text-center mb-4 text-white/90">Mantenga su posición mientras capturamos su imagen...</p>
+          <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5 mb-4 overflow-hidden">
+            <div className="bg-green-500 h-2.5 rounded-full animate-[progress_3s_ease-in-out]" style={{ width: '100%' }}></div>
           </div>
         </div>
       )}
+      
+      <style jsx global>{`
+        /* Personalizar colores del componente de AWS Amplify */
+        .amplify-liveness-oval {
+          border-color: #0EA5E9 !important;
+        }
+        
+        .amplify-liveness-success-text {
+          color: #22C55E !important;
+        }
+        
+        .amplify-liveness-button {
+          background-color: #0EA5E9 !important;
+          color: white !important;
+          border-radius: 0.75rem !important;
+          font-weight: 500 !important;
+        }
+
+        .amplify-liveness-button:hover {
+          background-color: #0284C7 !important;
+        }
+        
+        .amplify-liveness-icon-success {
+          color: #22C55E !important;
+        }
+        
+        .amplify-liveness-error-text {
+          color: #EF4444 !important;
+        }
+        
+        .amplify-liveness-progress-indicator {
+          background-color: #0EA5E9 !important;
+        }
+
+        .amplify-liveness-container {
+          border-radius: 1rem !important;
+          overflow: hidden !important;
+          box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+        }
+
+        .amplify-liveness-challenge-indicator {
+          border-radius: 9999px !important;
+        }
+
+        .amplify-liveness-challenge-indicator-completed {
+          background-color: #22C55E !important;
+        }
+      `}</style>
       
       <style jsx>{`
         .liveness-container {
@@ -503,6 +551,8 @@ export default function LivenessDetection({
           max-width: 500px;
           margin: 0 auto;
           position: relative;
+          border-radius: 1rem;
+          overflow: hidden;
         }
         
         @keyframes progress {

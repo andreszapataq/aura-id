@@ -3,24 +3,276 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Colores primarios */
+  --primary-50: 239 246 255;  /* sky-50 */
+  --primary-100: 224 242 254; /* sky-100 */
+  --primary-200: 186 230 253; /* sky-200 */
+  --primary-300: 125 211 252; /* sky-300 */
+  --primary-400: 56 189 248;  /* sky-400 */
+  --primary-500: 14 165 233;  /* sky-500 */
+  --primary-600: 2 132 199;   /* sky-600 */
+  --primary-700: 3 105 161;   /* sky-700 */
+  --primary-800: 7 89 133;    /* sky-800 */
+  --primary-900: 12 74 110;   /* sky-900 */
+  --primary-950: 8 47 73;     /* sky-950 */
+
+  /* Colores secundarios */
+  --secondary-50: 240 253 244;  /* green-50 */
+  --secondary-100: 220 252 231; /* green-100 */
+  --secondary-200: 187 247 208; /* green-200 */
+  --secondary-300: 134 239 172; /* green-300 */
+  --secondary-400: 74 222 128;  /* green-400 */
+  --secondary-500: 34 197 94;   /* green-500 */
+  --secondary-600: 22 163 74;   /* green-600 */
+  --secondary-700: 21 128 61;   /* green-700 */
+  --secondary-800: 22 101 52;   /* green-800 */
+  --secondary-900: 20 83 45;    /* green-900 */
+  --secondary-950: 5 46 22;     /* green-950 */
+
+  /* Colores de acento */
+  --accent-50: 253 242 255;  /* purple-50 */
+  --accent-100: 250 232 254; /* purple-100 */
+  --accent-200: 245 208 254; /* purple-200 */
+  --accent-300: 240 171 252; /* purple-300 */
+  --accent-400: 232 121 249; /* purple-400 */
+  --accent-500: 217 70 239;  /* purple-500 */
+  --accent-600: 192 38 211;  /* purple-600 */
+  --accent-700: 162 28 175;  /* purple-700 */
+  --accent-800: 134 25 143;  /* purple-800 */
+  --accent-900: 112 26 117;  /* purple-900 */
+  --accent-950: 74 4 78;     /* purple-950 */
+
+  /* Colores de estados */
+  --success: 22 163 74;      /* green-600 */
+  --warning: 217 119 6;      /* amber-600 */
+  --error: 220 38 38;        /* red-600 */
+  --info: 2 132 199;         /* sky-600 */
+
+  /* Colores de fondo y texto */
+  --background: 250 250 250; /* gray-50 */
+  --foreground: 17 24 39;    /* gray-900 */
+  --muted: 229 231 235;      /* gray-200 */
+  --muted-foreground: 107 114 128; /* gray-500 */
+  
+  /* Radios de bordes */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+
+  --primary-color: rgb(59 130 246);
+  --primary-hover: rgb(29 78 216);
+  --secondary-color: rgb(249 115 22);
+  --secondary-hover: rgb(234 88 12);
+  --success-color: rgb(34 197 94);
+  --success-hover: rgb(22 163 74);
+  --danger-color: rgb(239 68 68);
+  --danger-hover: rgb(220 38 38);
+  --warning-color: rgb(245 158 11);
+  --warning-hover: rgb(217 119 6);
+  --info-color: rgb(6 182 212);
+  --info-hover: rgb(8 145 178);
 }
 
-/* Modo oscuro desactivado por solicitud del cliente */
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  body {
+    font-family: var(--font-inter), system-ui, sans-serif;
+    @apply bg-gray-50 text-gray-800 min-h-screen;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold leading-tight;
+  }
+  
+  h1 {
+    @apply text-3xl sm:text-4xl;
+  }
+  
+  h2 {
+    @apply text-2xl sm:text-3xl;
+  }
+  
+  h3 {
+    @apply text-xl sm:text-2xl;
+  }
 }
 
-/* Animación para la barra de progreso */
-@keyframes progress {
-  0% {
-    width: 0%;
+@layer components {
+  .card {
+    @apply bg-white shadow-sm rounded-lg p-6;
   }
-  100% {
-    width: 100%;
+  
+  .card-hover {
+    @apply hover:shadow-xl hover:shadow-gray-200/60 hover:-translate-y-1;
   }
+  
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+  
+  .btn-primary {
+    @apply bg-blue-500 text-white hover:bg-blue-600 focus:ring-blue-500;
+  }
+  
+  .btn-secondary {
+    @apply bg-orange-500 text-white hover:bg-orange-600 focus:ring-orange-500;
+  }
+  
+  .btn-accent {
+    @apply bg-purple-500 text-white hover:bg-purple-600;
+  }
+  
+  .btn-outline {
+    @apply bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-500;
+  }
+  
+  .btn-ghost {
+    @apply hover:bg-gray-100 text-gray-700;
+  }
+  
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+  
+  .btn-md {
+    @apply px-4 py-2;
+  }
+  
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+  
+  .btn-xl {
+    @apply px-6 py-4 text-lg;
+  }
+  
+  .menu-card {
+    @apply card card-hover flex flex-col items-center justify-center p-8 text-center gap-4;
+  }
+  
+  .input {
+    @apply block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50;
+  }
+  
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+  
+  .input-error {
+    @apply block w-full rounded-md border-red-300 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50;
+  }
+  
+  .error-message {
+    @apply mt-1 text-sm text-red-600;
+  }
+  
+  .alert {
+    @apply p-4 rounded-md mb-4;
+  }
+  
+  .alert-success {
+    @apply bg-green-50 text-green-800 border border-green-200;
+  }
+  
+  .alert-error {
+    @apply bg-red-50 text-red-800 border border-red-200;
+  }
+  
+  .alert-warning {
+    @apply bg-amber-50 text-amber-800 border border-amber-200;
+  }
+  
+  .alert-info {
+    @apply bg-blue-50 text-blue-800 border border-blue-200;
+  }
+  
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-blue {
+    @apply bg-blue-100 text-blue-800;
+  }
+  
+  .badge-red {
+    @apply bg-red-100 text-red-800;
+  }
+  
+  .badge-green {
+    @apply bg-green-100 text-green-800;
+  }
+  
+  .badge-yellow {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+  
+  .badge-gray {
+    @apply bg-gray-100 text-gray-800;
+  }
+  
+  .animated-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+  
+  .card-header {
+    @apply px-6 py-4 border-b border-gray-200;
+  }
+  
+  .card-footer {
+    @apply px-6 py-4 border-t border-gray-200;
+  }
+  
+  :global(.amplify-button.primary) {
+    @apply bg-blue-500 hover:bg-blue-600 border-blue-500 hover:border-blue-600;
+  }
+  
+  :global(.amplify-button.secondary) {
+    @apply bg-gray-100 text-gray-800 hover:bg-gray-200 border-gray-300;
+  }
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+/* Personalizaciones adicionales para componentes de terceros */
+.react-datepicker-wrapper {
+  @apply w-full;
+}
+
+.react-datepicker {
+  @apply font-sans border-gray-200 shadow-md;
+}
+
+.react-datepicker__header {
+  @apply bg-gray-50 border-gray-200;
+}
+
+.react-datepicker__day--selected {
+  @apply bg-blue-500 hover:bg-blue-600;
 }
