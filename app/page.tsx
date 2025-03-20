@@ -46,10 +46,10 @@ export default function Home() {
         transition={{ duration: 0.5 }}
         className="text-center mb-12 md:mb-16"
       >
-        <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gray-900">
+        <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gray-900 text-display">
           Control de Acceso de Empleados
         </h1>
-        <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
+        <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto text-body">
           Sistema inteligente de verificación facial para gestión de entradas y salidas
         </p>
       </motion.div>
@@ -66,8 +66,8 @@ export default function Home() {
               <div className="w-20 h-20 flex items-center justify-center rounded-full bg-sky-500 group-hover:bg-white transition-colors duration-300">
                 <RegisterIcon />
               </div>
-              <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white">Registro</h2>
-              <p className="text-gray-600 text-center max-w-xs group-hover:text-white">
+              <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white text-heading">Registro</h2>
+              <p className="text-gray-600 text-center max-w-xs group-hover:text-white text-body">
                 Registra nuevos empleados en el sistema mediante reconocimiento facial
               </p>
             </div>
@@ -80,8 +80,8 @@ export default function Home() {
               <div className="w-20 h-20 flex items-center justify-center rounded-full bg-green-500 group-hover:bg-white transition-colors duration-300">
                 <AccessIcon />
               </div>
-              <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white">Control de Acceso</h2>
-              <p className="text-gray-600 text-center max-w-xs group-hover:text-white">
+              <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white text-heading">Control de Acceso</h2>
+              <p className="text-gray-600 text-center max-w-xs group-hover:text-white text-body">
                 Registra entradas y salidas de empleados de manera rápida y segura
               </p>
             </div>
@@ -94,8 +94,8 @@ export default function Home() {
               <div className="w-20 h-20 flex items-center justify-center rounded-full bg-purple-500 group-hover:bg-white transition-colors duration-300">
                 <ReportsIcon />
               </div>
-              <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white">Reportes</h2>
-              <p className="text-gray-600 text-center max-w-xs group-hover:text-white">
+              <h2 className="text-2xl font-semibold mb-3 text-gray-900 group-hover:text-white text-heading">Reportes</h2>
+              <p className="text-gray-600 text-center max-w-xs group-hover:text-white text-body">
                 Genera informes detallados de acceso y visualiza estadísticas
               </p>
             </div>
