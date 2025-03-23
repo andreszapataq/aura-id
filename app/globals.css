@@ -3,50 +3,50 @@
 @tailwind utilities;
 
 :root {
-  /* Colores primarios */
-  --primary-50: 239 246 255;  /* sky-50 */
-  --primary-100: 224 242 254; /* sky-100 */
-  --primary-200: 186 230 253; /* sky-200 */
-  --primary-300: 125 211 252; /* sky-300 */
-  --primary-400: 56 189 248;  /* sky-400 */
-  --primary-500: 14 165 233;  /* sky-500 */
-  --primary-600: 2 132 199;   /* sky-600 */
-  --primary-700: 3 105 161;   /* sky-700 */
-  --primary-800: 7 89 133;    /* sky-800 */
-  --primary-900: 12 74 110;   /* sky-900 */
-  --primary-950: 8 47 73;     /* sky-950 */
+  /* Colores primarios - Verde azulado */
+  --primary-50: 240 253 244;  /* verde claro */
+  --primary-100: 220 252 231; 
+  --primary-200: 187 247 208; 
+  --primary-300: 134 239 172; 
+  --primary-400: 74 222 128;  
+  --primary-500: 0 221 139;   /* #00DD8B */
+  --primary-600: 0 191 113;   /* #00BF71 */
+  --primary-700: 21 128 61;   
+  --primary-800: 22 101 52;   
+  --primary-900: 20 83 45;    
+  --primary-950: 1 79 89;     /* #014F59 */
 
-  /* Colores secundarios */
-  --secondary-50: 240 253 244;  /* green-50 */
-  --secondary-100: 220 252 231; /* green-100 */
-  --secondary-200: 187 247 208; /* green-200 */
-  --secondary-300: 134 239 172; /* green-300 */
-  --secondary-400: 74 222 128;  /* green-400 */
-  --secondary-500: 34 197 94;   /* green-500 */
-  --secondary-600: 22 163 74;   /* green-600 */
-  --secondary-700: 21 128 61;   /* green-700 */
-  --secondary-800: 22 101 52;   /* green-800 */
-  --secondary-900: 20 83 45;    /* green-900 */
-  --secondary-950: 5 46 22;     /* green-950 */
+  /* Colores secundarios - Verde azulado oscuro */
+  --secondary-50: 236 254 255;
+  --secondary-100: 207 250 254;
+  --secondary-200: 165 243 252;
+  --secondary-300: 103 232 249;
+  --secondary-400: 34 211 238;
+  --secondary-500: 6 182 212;
+  --secondary-600: 8 145 178;
+  --secondary-700: 14 116 144;
+  --secondary-800: 21 94 117;
+  --secondary-900: 22 78 99;
+  --secondary-950: 1 79 89;   /* #014F59 */
 
-  /* Colores de acento */
-  --accent-50: 253 242 255;  /* purple-50 */
-  --accent-100: 250 232 254; /* purple-100 */
-  --accent-200: 245 208 254; /* purple-200 */
-  --accent-300: 240 171 252; /* purple-300 */
-  --accent-400: 232 121 249; /* purple-400 */
-  --accent-500: 217 70 239;  /* purple-500 */
-  --accent-600: 192 38 211;  /* purple-600 */
-  --accent-700: 162 28 175;  /* purple-700 */
-  --accent-800: 134 25 143;  /* purple-800 */
-  --accent-900: 112 26 117;  /* purple-900 */
-  --accent-950: 74 4 78;     /* purple-950 */
+  /* Colores de acento - Verde brillante */
+  --accent-50: 240 253 244;
+  --accent-100: 220 252 231;
+  --accent-200: 187 247 208;
+  --accent-300: 134 239 172;
+  --accent-400: 74 222 128;
+  --accent-500: 0 221 139;   /* #00DD8B */
+  --accent-600: 0 191 113;   /* #00BF71 */
+  --accent-700: 21 128 61;
+  --accent-800: 22 101 52;
+  --accent-900: 20 83 45;
+  --accent-950: 5 46 22;
 
   /* Colores de estados */
-  --success: 22 163 74;      /* green-600 */
+  --success: 0 191 113;      /* #00BF71 */
   --warning: 217 119 6;      /* amber-600 */
   --error: 220 38 38;        /* red-600 */
-  --info: 2 132 199;         /* sky-600 */
+  --info: 6 182 212;         /* cyan-500 */
 
   /* Colores de fondo y texto */
   --background: 250 250 250; /* gray-50 */
@@ -61,12 +61,12 @@
   --radius-xl: 1.5rem;
   --radius-2xl: 2rem;
 
-  --primary-color: rgb(59 130 246);
-  --primary-hover: rgb(29 78 216);
-  --secondary-color: rgb(249 115 22);
-  --secondary-hover: rgb(234 88 12);
-  --success-color: rgb(34 197 94);
-  --success-hover: rgb(22 163 74);
+  --primary-color: rgb(0 221 139);  /* #00DD8B */
+  --primary-hover: rgb(0 191 113);  /* #00BF71 */
+  --secondary-color: rgb(1 79 89);  /* #014F59 */
+  --secondary-hover: rgb(0 64 74);  /* Versión más oscura de #014F59 */
+  --success-color: rgb(0 191 113);  /* #00BF71 */
+  --success-hover: rgb(0 161 93);   /* Versión más oscura de #00BF71 */
   --danger-color: rgb(239 68 68);
   --danger-hover: rgb(220 38 38);
   --warning-color: rgb(245 158 11);
@@ -78,12 +78,12 @@
 @layer base {
   body {
     font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
-    @apply bg-gray-50 text-gray-800 min-h-screen;
+    @apply bg-white text-gray-800 min-h-screen;
   }
   
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
-    @apply font-bold leading-tight;
+    @apply font-bold leading-tight text-[#014F59];
   }
   
   h1 {
@@ -96,6 +96,10 @@
   
   h3 {
     @apply text-xl sm:text-2xl;
+  }
+
+  a {
+    @apply text-[#014F59] hover:text-[#00BF71] transition-colors;
   }
 }
 
@@ -114,23 +118,23 @@
   }
   
   .btn-primary {
-    @apply bg-blue-500 text-white hover:bg-blue-600 focus:ring-blue-500;
+    @apply bg-[#00DD8B] text-[#014F59] hover:bg-[#00BF71] focus:ring-[#00BF71];
   }
   
   .btn-secondary {
-    @apply bg-orange-500 text-white hover:bg-orange-600 focus:ring-orange-500;
+    @apply bg-[#014F59] text-white hover:bg-[#013A42] focus:ring-[#014F59];
   }
   
   .btn-accent {
-    @apply bg-purple-500 text-white hover:bg-purple-600;
+    @apply bg-teal-500 text-white hover:bg-teal-600 focus:ring-teal-500;
   }
   
   .btn-outline {
-    @apply bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-500;
+    @apply bg-white text-[#014F59] border border-[#00BF71] hover:bg-[#00DD8B]/10 focus:ring-[#00BF71];
   }
   
   .btn-ghost {
-    @apply hover:bg-gray-100 text-gray-700;
+    @apply hover:bg-[#00DD8B]/10 text-[#014F59];
   }
   
   .btn-sm {
@@ -157,7 +161,7 @@
     font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
     @apply block w-full px-5 py-3.5 rounded-lg border border-gray-300 shadow-sm
            text-gray-800 placeholder-gray-400
-           focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500 focus:ring-opacity-30
+           focus:outline-none focus:ring-2 focus:ring-[#00BF71] focus:border-[#00BF71] focus:ring-opacity-30
            focus:shadow-md hover:border-gray-400
            transition-all duration-200 ease-in-out;
     background-image: linear-gradient(to top, #f9fafb 0%, #ffffff 100%);
@@ -168,12 +172,12 @@
   }
   
   .input:focus::placeholder {
-    @apply text-blue-300 opacity-50;
+    @apply text-[#00DD8B] opacity-50;
   }
 
   .input:focus {
     background-image: linear-gradient(to top, #f3f4f6 0%, #ffffff 100%);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 0 3px rgba(0, 221, 139, 0.15);
   }
 
   .input:hover:not(:focus) {
@@ -205,7 +209,7 @@
   }
   
   .alert-success {
-    @apply bg-green-50 text-green-800 border border-green-200;
+    @apply bg-[#00DD8B]/10 text-[#014F59] border border-[#00BF71]/30;
   }
   
   .alert-error {
@@ -217,7 +221,7 @@
   }
   
   .alert-info {
-    @apply bg-blue-50 text-blue-800 border border-blue-200;
+    @apply bg-[#014F59]/10 text-[#014F59] border border-[#014F59]/20;
   }
   
   .badge {
@@ -225,7 +229,7 @@
   }
   
   .badge-blue {
-    @apply bg-blue-100 text-blue-800;
+    @apply bg-[#014F59]/20 text-[#014F59];
   }
   
   .badge-red {
@@ -233,7 +237,7 @@
   }
   
   .badge-green {
-    @apply bg-green-100 text-green-800;
+    @apply bg-[#00DD8B]/20 text-[#00BF71];
   }
   
   .badge-yellow {
@@ -359,4 +363,64 @@ footer {
   font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
   font-weight: 400;
   line-height: 1.5;
+}
+
+/* Componentes de navegación */
+.nav-link {
+  @apply text-gray-700 hover:text-[#014F59] hover:bg-[#00DD8B]/10 px-3 py-2 rounded-md transition-colors;
+}
+
+.nav-link.active {
+  @apply text-[#014F59] bg-[#00DD8B]/10 font-medium;
+}
+
+/* Tablas */
+.table {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+.table thead {
+  @apply bg-gray-50;
+}
+
+.table th {
+  @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+}
+
+.table tbody {
+  @apply divide-y divide-gray-200 bg-white;
+}
+
+.table td {
+  @apply px-6 py-4 whitespace-nowrap text-sm text-gray-500;
+}
+
+.table tr:hover {
+  @apply bg-[#00DD8B]/5;
+}
+
+/* Paginación */
+.pagination {
+  @apply flex justify-center mt-4 space-x-1;
+}
+
+.pagination-item {
+  @apply px-3 py-1 rounded-md text-sm text-gray-700 hover:bg-[#00DD8B]/10 hover:text-[#014F59];
+}
+
+.pagination-item.active {
+  @apply bg-[#00BF71] text-white;
+}
+
+/* Tabs */
+.tabs {
+  @apply flex border-b border-gray-200;
+}
+
+.tab {
+  @apply py-2 px-4 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-[#014F59] hover:border-[#00BF71];
+}
+
+.tab.active {
+  @apply text-[#014F59] border-[#00DD8B];
 }

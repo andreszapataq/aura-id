@@ -36,7 +36,7 @@ export default function Header() {
                   height={32}
                   className="h-8 w-auto"
                 />
-                <span className="ml-2 text-xl font-bold text-gray-900">Aura ID</span>
+                <span className="ml-2 text-xl font-bold text-[#014F59]">Aura ID</span>
               </Link>
             </div>
             <nav className="hidden sm:ml-8 sm:flex sm:space-x-8">
@@ -46,8 +46,8 @@ export default function Header() {
                   href={item.href}
                   className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium h-16 ${
                     isActive(item.href)
-                      ? 'border-blue-500 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-[#00DD8B] text-[#014F59]'
+                      : 'border-transparent text-gray-500 hover:text-[#014F59] hover:border-[#00BF71]'
                   }`}
                 >
                   {item.name}
@@ -60,7 +60,7 @@ export default function Header() {
           <div className="sm:hidden flex items-center">
             <button
               type="button"
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none"
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-[#014F59] hover:bg-[#00DD8B]/10 focus:outline-none"
               aria-controls="mobile-menu"
               aria-expanded="false"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -96,8 +96,8 @@ export default function Header() {
                 href={item.href}
                 className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
                   isActive(item.href)
-                    ? 'bg-blue-50 border-blue-500 text-blue-700'
-                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
+                    ? 'bg-[#00DD8B]/10 border-[#00DD8B] text-[#014F59]'
+                    : 'border-transparent text-gray-500 hover:bg-[#00DD8B]/5 hover:border-[#00BF71] hover:text-[#014F59]'
                 }`}
                 onClick={() => setMobileMenuOpen(false)}
               >

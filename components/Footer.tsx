@@ -11,25 +11,25 @@ export default function Footer() {
           <div className="flex justify-center md:justify-start space-x-6">
             <Link 
               href="/"
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-[#014F59]"
             >
               Inicio
             </Link>
             <Link 
               href="/register"
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-[#014F59]"
             >
               Registro
             </Link>
             <Link 
               href="/access"
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-[#014F59]"
             >
               Control de Acceso
             </Link>
             <Link 
               href="/reports"
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-[#014F59]"
             >
               Reportes
             </Link>
@@ -44,7 +44,7 @@ export default function Footer() {
                 height={24}
                 className="h-6 w-auto"
               />
-              <span className="ml-2 text-sm text-gray-500">
+              <span className="ml-2 text-sm text-[#014F59]">
                 © {currentYear} Aura ID. Todos los derechos reservados.
               </span>
             </div>
