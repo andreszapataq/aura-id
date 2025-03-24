@@ -36,7 +36,7 @@ export default function Header() {
                   height={32}
                   className="h-8 w-auto"
                 />
-                <span className="ml-2 text-xl font-bold text-[#014F59]">Aura ID</span>
+                <span className="ml-2 text-xl font-bold text-black">Aura ID</span>
               </Link>
             </div>
             <nav className="hidden sm:ml-8 sm:flex sm:space-x-8">
