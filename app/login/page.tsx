@@ -1,17 +1,21 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
 import Link from "next/link"
 import Image from "next/image"
 
 export default function Login() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  
+  // Obtener la URL de redirección de los parámetros de búsqueda
+  const redirect = searchParams.get('redirect')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,7 +38,12 @@ export default function Login() {
       }
 
       // Si la autenticación es exitosa, redirigir al usuario
-      router.push("/")
+      // a la URL original o a la página principal
+      if (redirect) {
+        router.push(decodeURIComponent(redirect))
+      } else {
+        router.push('/')
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : "Error al iniciar sesión")
     } finally {
@@ -46,7 +55,7 @@ export default function Login() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="container mx-auto px-4 py-12 flex justify-center items-center"
+      className="container mx-auto px-4 py-12 flex justify-center items-center min-h-screen"
     >
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">

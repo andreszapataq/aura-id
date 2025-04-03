@@ -2,13 +2,15 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 
 export default function Header() {
+  const router = useRouter()
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   
   const navigationItems = [
     { name: 'Inicio', href: '/' },
@@ -20,6 +22,24 @@ export default function Header() {
   // Verifica si la ruta actual coincide con el enlace de navegación
   const isActive = (path: string) => {
     return pathname === path
+  }
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+      })
+      
+      if (response.ok) {
+        // Redirigir al login después de cerrar sesión
+        router.push('/login')
+      }
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error)
+    } finally {
+      setIsLoggingOut(false)
+    }
   }
 
   return (
@@ -54,6 +74,17 @@ export default function Header() {
                 </Link>
               ))}
             </nav>
+          </div>
+          
+          {/* Botón de cerrar sesión */}
+          <div className="hidden sm:flex sm:items-center">
+            <button
+              onClick={handleLogout}
+              className="btn btn-sm btn-outline"
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}
+            </button>
           </div>
           
           {/* Botón del menú móvil */}
@@ -104,6 +135,15 @@ export default function Header() {
                 {item.name}
               </Link>
             ))}
+            
+            {/* Botón de cerrar sesión en menú móvil */}
+            <button
+              onClick={handleLogout}
+              className="w-full text-left block pl-3 pr-4 py-2 border-l-4 border-transparent text-gray-500 hover:bg-[#00DD8B]/5 hover:border-[#00BF71] hover:text-[#014F59] text-base font-medium"
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}
+            </button>
           </div>
         </motion.div>
       )}
