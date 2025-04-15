@@ -13,8 +13,11 @@ export default function Login() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [fullName, setFullName] = useState("")
+  const [organizationName, setOrganizationName] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [passwordMatchError, setPasswordMatchError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
   
@@ -35,6 +38,15 @@ export default function Login() {
     }
   }, [user, redirect, router])
 
+  // Efecto para validar coincidencia de contraseñas en tiempo real
+  useEffect(() => {
+    if (isRegistering && password && confirmPassword && password !== confirmPassword) {
+      setPasswordMatchError("Las contraseñas no coinciden.")
+    } else {
+      setPasswordMatchError(null)
+    }
+  }, [password, confirmPassword, isRegistering])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -54,7 +66,7 @@ export default function Login() {
         }
 
         // Registrar usuario
-        const { error: signUpError } = await signUp(email, password)
+        const { error: signUpError } = await signUp(email, password, fullName, organizationName)
 
         if (signUpError) {
           throw new Error(signUpError.message || "Error al crear la cuenta")
@@ -64,6 +76,8 @@ export default function Login() {
         setIsRegistering(false)
         setPassword("")
         setConfirmPassword("")
+        setFullName("")
+        setOrganizationName("")
       } else {
         // Iniciar sesión
         const { error: signInError } = await signIn(email, password)
@@ -88,6 +102,8 @@ export default function Login() {
     setSuccess(null)
     setPassword("")
     setConfirmPassword("")
+    setFullName("")
+    setOrganizationName("")
   }
 
   return (
@@ -162,20 +178,55 @@ export default function Login() {
             </div>
 
             {isRegistering && (
-              <div>
-                <label htmlFor="confirmPassword" className="label">
-                  Confirmar Contraseña
-                </label>
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="input focus:shadow-blue-100"
-                  placeholder="Confirma tu contraseña"
-                  required
-                />
-              </div>
+              <>
+                <div>
+                  <label htmlFor="confirmPassword" className="label">
+                    Confirmar Contraseña
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className={`input focus:shadow-blue-100 ${passwordMatchError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                    placeholder="Confirma tu contraseña"
+                    required
+                  />
+                  {passwordMatchError && (
+                    <p className="mt-2 text-xs text-red-600">{passwordMatchError}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="fullName" className="label">
+                    Nombre Completo
+                  </label>
+                  <input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="input focus:shadow-blue-100"
+                    placeholder="Tu nombre completo"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="organizationName" className="label">
+                    Nombre de la Organización
+                  </label>
+                  <input
+                    id="organizationName"
+                    type="text"
+                    value={organizationName}
+                    onChange={(e) => setOrganizationName(e.target.value)}
+                    className="input focus:shadow-blue-100"
+                    placeholder="Nombre de tu empresa o equipo"
+                    required
+                  />
+                </div>
+              </>
             )}
 
             <div className="pt-2">
