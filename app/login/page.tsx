@@ -89,7 +89,16 @@ export default function Login() {
         // Si la autenticación es exitosa, el efecto se encargará de redirigir
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Error en la operación")
+      // Verifica si es un error y si el mensaje es el de credenciales inválidas
+      if (error instanceof Error && error.message.includes('Invalid login credentials')) {
+        setError("Credenciales inválidas. Por favor, verifica tu email y contraseña.");
+      } else if (error instanceof Error) {
+        // Si es otro tipo de error, muestra su mensaje (o uno genérico si prefieres)
+        setError(error.message || "Ocurrió un error inesperado.");
+      } else {
+        // Para errores que no son instancias de Error
+        setError("Ocurrió un error inesperado.");
+      }
     } finally {
       setLoading(false)
     }
