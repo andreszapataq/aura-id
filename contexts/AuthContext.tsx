@@ -35,131 +35,127 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true)
   const router = useRouter()
 
-  // Cargar sesión de usuario al inicio
+  // Cargar sesión de usuario al inicio y suscribirse a cambios
   useEffect(() => {
-    const loadSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-      setUser(session?.user || null)
-      setLoading(false)
+    setLoading(true); // Empieza cargando
+    const getSessionAndSubscribe = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false); // Termina la carga inicial
 
-      // Suscribirse a cambios en el estado de autenticación
-      const { data: { subscription } } = await supabase.auth.onAuthStateChange(
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
         (_event, session) => {
-          setSession(session)
-          setUser(session?.user || null)
-          setLoading(false)
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false); // Actualiza estado de carga en cambios
         }
-      )
+      );
 
+      // Limpiar suscripción al desmontar el componente
       return () => {
-        subscription.unsubscribe()
-      }
+        subscription.unsubscribe();
+      };
     }
 
-    loadSession()
-  }, [])
+    getSessionAndSubscribe();
+  }, []) // Se ejecuta solo una vez al montar el componente
 
   // Función para iniciar sesión
   const signIn = async (email: string, password: string) => {
+    setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password
-      })
-
+      });
       if (error) {
-        return { error }
+        console.error('Error durante el inicio de sesión:', error);
+        return { error };
       }
-
-      return { error: null }
+      // El listener onAuthStateChange actualizará el estado
+      return { error: null };
     } catch (error) {
-      console.error('Error durante el inicio de sesión:', error)
-      return { error: error as AuthError }
+      console.error('Excepción durante el inicio de sesión:', error);
+      return { error: error instanceof AuthError ? error : new AuthError('Error desconocido') };
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  // Función para registrar un nuevo usuario
+  // Función para registrar un nuevo usuario (LLAMA A LA EDGE FUNCTION)
   const signUp = async (email: string, password: string, fullName: string, organizationName: string) => {
+    setLoading(true); // Indicar que algo está cargando
     try {
-      // 1. Crear la organización
-      const { data: organization, error: organizationError } = await supabase
-        .from('organizations')
-        .insert([{ name: organizationName, is_active: true }])
-        .select()
-        .single() // Asumimos que el nombre de la organización es único por ahora
+      // 1. Invocar la Edge Function 'create-user-and-org'
+      const { data, error: functionError } = await supabase.functions.invoke('create-user-and-org', {
+        // Pasamos los datos necesarios en el cuerpo de la solicitud
+        body: { email, password, fullName, organizationName },
+      });
 
-      if (organizationError || !organization) {
-        throw new Error(organizationError?.message || 'Error al crear la organización')
+      // 2. Manejar errores de la invocación o errores devueltos por la función
+      if (functionError) {
+        console.error('Error al invocar la Edge Function:', functionError);
+        // Intenta obtener un mensaje de error más específico si la función lo envió en 'data.error'
+        const errorMessage = data?.error || functionError.message || 'Ocurrió un error durante el registro.';
+        // Devuelve un objeto compatible con tu tipo de retorno esperado
+        return { error: new AuthError(errorMessage), user: null };
       }
 
-      // 2. Crear el usuario en Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/login`
-        }
-      })
+      // 3. Éxito (la función se ejecutó sin errores)
+      // La Edge Function ya creó la organización, el usuario en Auth y el perfil en la tabla 'users'.
+      // No necesitamos devolver el 'user' aquí directamente.
+      // El listener onAuthStateChange detectará automáticamente el estado
+      // cuando el usuario inicie sesión por primera vez (después de confirmar el email, si aplica).
 
-      if (authError || !authData.user) {
-        // Si falla la creación del usuario en Auth, intentar eliminar la organización creada
-        await supabase.from('organizations').delete().eq('id', organization.id)
-        throw new Error(authError?.message || 'Error al registrar el usuario en autenticación')
-      }
+      // Opcional: Puedes mostrar un mensaje de éxito al usuario.
+      // console.log('Registro iniciado. Revisa tu email para confirmar.');
+      // alert('¡Registro exitoso! Revisa tu correo para confirmar (si es necesario) e inicia sesión.');
 
-      // 3. Crear el registro del usuario en la tabla 'users'
-      const { error: userError } = await supabase
-        .from('users')
-        .insert([{
-          id: authData.user.id, // Usar el ID del usuario de Auth
-          email: email,
-          role: 'admin', // Asignar rol inicial, puede ser ajustado
-          organization_id: organization.id
-        }])
-
-      if (userError) {
-        // Si falla la creación en 'users', intentar eliminar el usuario de Auth y la organización
-        // No intentar eliminar empleado ya que no se crea aquí
-        await supabase.auth.admin.deleteUser(authData.user.id) // Requiere permisos de admin
-        await supabase.from('organizations').delete().eq('id', organization.id)
-        throw new Error(userError.message || 'Error al crear el registro del usuario')
-      }
-      
-      // -- SECCIÓN ELIMINADA: Crear el registro del empleado en la tabla 'employees' --
-      // El empleado se registrará a través de otra funcionalidad de la aplicación.
-
-      // Si todo fue exitoso hasta aquí (Organización, Auth User, User)
-      return { error: null, user: authData.user }
+      // Devolvemos éxito. El estado de 'user' y 'session' se actualizará a través del listener.
+      return { error: null, user: null };
 
     } catch (error) {
-      console.error('Error durante el registro completo:', error)
-      return { error: error instanceof AuthError ? error : new AuthError(error instanceof Error ? error.message : 'Error desconocido'), user: null }
+      // Capturar errores inesperados (ej. problemas de red al llamar la función)
+      console.error('Error inesperado durante el proceso de signUp:', error);
+      return { error: new AuthError(error instanceof Error ? error.message : 'Error desconocido en el cliente'), user: null };
+    } finally {
+       setLoading(false); // Quitar el estado de carga
     }
-  }
+  };
 
   // Función para cerrar sesión
   const signOut = async () => {
+    setLoading(true);
     try {
-      await supabase.auth.signOut()
-      router.push('/login')
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+         console.error('Error durante el cierre de sesión:', error);
+      } else {
+          // El listener onAuthStateChange actualizará session y user a null
+          router.push('/login'); // Redirigir al login después de cerrar sesión
+      }
     } catch (error) {
-      console.error('Error durante el cierre de sesión:', error)
+      console.error('Excepción durante el cierre de sesión:', error);
+    } finally {
+       setLoading(false);
     }
-  }
+  };
 
+  // Valor proporcionado por el contexto
   const value = {
     session,
     user,
     loading,
     signIn,
-    signUp,
+    signUp, // Esta es la nueva función signUp que llama a la Edge Function
     signOut
-  }
+  };
 
+  // Renderizar el proveedor con el valor y los componentes hijos
   return (
     <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
-  )
+  );
 } 
