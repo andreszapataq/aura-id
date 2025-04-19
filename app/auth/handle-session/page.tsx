@@ -4,6 +4,12 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 
+// Placeholder para un componente Spinner/Loader visualmente más atractivo
+// Si usas Shadcn/ui, podrías importar y usar <Spinner /> o similar aquí.
+const Loader = () => (
+  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+);
+
 export default function HandleSessionPage() {
   const router = useRouter()
   // Necesitamos crear un cliente Supabase aquí en el cliente
@@ -63,6 +69,11 @@ export default function HandleSessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Dependencias vacías para ejecutar solo al montar
 
-  // Muestra algo mientras se procesa
-  return <div>Procesando autenticación...</div>
+  // Contenedor principal para centrar el contenido
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+      <Loader />
+      <p className="mt-4 text-lg text-gray-700">Procesando autenticación...</p>
+    </div>
+  );
 } 
