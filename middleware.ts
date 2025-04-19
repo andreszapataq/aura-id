@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
+// Lista de rutas públicas que no requieren autenticación
+const publicPaths = ['/login', '/auth/callback', '/auth/handle-session'];
+
 export async function middleware(request: NextRequest) {
   try {
     // Crear cliente de Supabase para el middleware
@@ -28,26 +31,33 @@ export async function middleware(request: NextRequest) {
     
     // URL actual y de login
     const path = request.nextUrl.pathname
-    const isAuthRoute = path === '/login'
+    
+    // Comprobar si la ruta actual es una de las públicas
+    const isPublicPath = publicPaths.includes(path);
 
-    // Si es una ruta de autenticación y el usuario está logueado, redirigir a la home
-    if (isAuthRoute && session) {
+    // Si es una ruta pública (login) y el usuario está logueado, redirigir a la home
+    // (Se podría refinar para solo aplicar a /login)
+    if (isPublicPath && path === '/login' && session) { 
       return NextResponse.redirect(new URL('/', request.url))
     }
     
-    // Si no es ruta de autenticación y el usuario no está logueado, redirigir al login
-    if (!isAuthRoute && !session) {
-      // Guardar la URL a la que intentaba acceder
+    // Si NO es una ruta pública y el usuario NO está logueado, redirigir al login
+    if (!isPublicPath && !session) { 
       const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('redirect', encodeURIComponent(path))
+      // Mantener el parámetro redirect si ya existe, o usar el path actual
+      const redirectParam = request.nextUrl.searchParams.get('redirect');
+      loginUrl.searchParams.set('redirect', redirectParam ? redirectParam : encodeURIComponent(path))
+      console.log(`[Middleware] No session on protected route (${path}). Redirecting to login with redirect=${loginUrl.searchParams.get('redirect')}`)
       return NextResponse.redirect(loginUrl)
     }
     
+    // Si es pública y no logueado, o si es protegida y logueado, deja pasar
+    console.log(`[Middleware] Allowing access to ${path}. Session: ${session ? 'present' : 'null'}, Public: ${isPublicPath}`)
     return res
   } catch (error) {
-    console.error('Error en middleware:', error)
-    // En caso de error, permitir el acceso pero redirigir a login en rutas protegidas
-    if (request.nextUrl.pathname !== '/login') {
+    console.error('[Middleware] Error:', error)
+    // En caso de error, intenta redirigir a login solo si no es ya una ruta pública
+    if (!publicPaths.includes(request.nextUrl.pathname)) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
     return NextResponse.next()
