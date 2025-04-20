@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { indexFace, checkFaceExists } from '@/lib/rekognition';
-import { supabase } from '@/lib/supabase';
+import { indexFace, checkFaceExists, deleteFace } from '@/lib/rekognition';
+// Quitar la importación del cliente browser ya que no se usa aquí
+// import { supabase as supabaseBrowserClient } from '@/lib/supabase'; 
+// Importar createClient genérico para el admin client
+import { createClient } from '@supabase/supabase-js'; 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // Cliente de S3 para almacenar snapshots iniciales
@@ -44,6 +47,14 @@ async function saveImageToS3(imageData: string, employeeId: string): Promise<str
 }
 
 export async function POST(request: Request) {
+  // Crear cliente Supabase Admin DENTRO de la función POST
+  // Este cliente usa la Service Role Key y BYPASSEA RLS.
+  const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!, // Usar SUPABASE_URL (no NEXT_PUBLIC)
+      process.env.SUPABASE_SERVICE_ROLE_KEY!, // ¡Clave de Servicio!
+      { auth: { persistSession: false } } // No necesitamos persistir sesión para el admin
+  );
+
   try {
     // Verificar si se está forzando el registro
     const url = new URL(request.url);
@@ -128,19 +139,26 @@ export async function POST(request: Request) {
         
         if (existingFace) {
           console.log(`Se encontró un rostro similar con ID: ${existingFace.faceId}, similaridad: ${existingFace.similarity}%`);
-          
-          // Si la similitud es muy alta (>= 90%), bloquear el registro
+
+          // Solo actuar si la similitud es muy alta (umbral ajustable, ej. 90%)
           if (existingFace.similarity && existingFace.similarity >= 90) {
-            console.log(`Similitud muy alta (${existingFace.similarity}%), verificando información del empleado...`);
-            
-            // Buscar información del empleado asociado al rostro
-            const { data: employeeData } = await supabase
+            console.log(`Similitud muy alta (${existingFace.similarity}%), verificando si está asociado a empleado...`);
+
+            // Buscar si el FaceID está asociado a un empleado en la BD
+            const { data: employeeData, error: employeeError } = await supabaseAdmin
               .from("employees")
-              .select("*")
+              .select("employee_id, name") // Seleccionar solo lo necesario
               .eq("face_data", existingFace.faceId)
-              .single();
-            
+              .maybeSingle(); // Usar maybeSingle para manejar null sin error
+
+            if (employeeError) {
+              // Loggear error pero considerar si continuar
+              console.error("Error al buscar empleado por face_data:", employeeError);
+              // Podrías decidir devolver un 500 aquí si es crítico
+            }
+
             if (employeeData) {
+              // --- CASO: ROSTRO ENCONTRADO Y ASOCIADO ---
               console.log(`El rostro ya está registrado para el empleado: ${employeeData.name} (ID: ${employeeData.employee_id})`);
               return NextResponse.json({
                 ok: false,
@@ -149,52 +167,84 @@ export async function POST(request: Request) {
                 employeeData,
                 similarity: existingFace.similarity,
                 faceId: existingFace.faceId
-              }, { status: 409 });
+              }, { status: 409 }); // 409 Conflict
+
             } else {
-              // Verificar si hay algún empleado en la base de datos
-              const { count } = await supabase
-                .from("employees")
-                .select("*", { count: 'exact', head: true });
+              // --- CASO: ROSTRO ENCONTRADO PERO NO ASOCIADO (HUÉRFANO) ---
+              console.warn(`ROSTRO HUÉRFANO DETECTADO: FaceId ${existingFace.faceId} existe en Rekognition pero no en la BD. Intentando eliminarlo...`);
               
-              // Si no hay empleados en la base de datos, es probable que sea un rostro huérfano
-              if (count === 0) {
-                console.log("No hay empleados en la base de datos, pero se encontró un rostro similar en AWS. Posible rostro huérfano.");
-                return NextResponse.json({
-                  ok: false,
-                  error: 'Rostro huérfano detectado',
-                  message: `Se detectó un rostro similar en AWS Rekognition, pero no hay empleados registrados en la base de datos. Posible desincronización. Se recomienda limpiar la colección.`,
-                  similarity: existingFace.similarity,
-                  faceId: existingFace.faceId,
-                  isOrphan: true
-                }, { status: 409 });
+              // Asegurarse de que faceId existe antes de intentar eliminar
+              if (!existingFace.faceId) {
+                  console.error("Error crítico: Se detectó rostro huérfano pero falta FaceId.");
+                  return NextResponse.json({
+                    ok: false,
+                    error: 'Error interno procesando rostro huérfano',
+                    message: 'No se pudo obtener el ID del rostro huérfano detectado.'
+                  }, { status: 500 });
               }
-              
-              // Incluso si no encontramos el empleado, si la similitud es muy alta, bloqueamos el registro
-              console.log(`No se encontró información del empleado, pero la similitud es muy alta (${existingFace.similarity}%)`);
-              return NextResponse.json({
-                ok: false,
-                error: 'Rostro similar detectado',
-                message: `Se detectó un rostro muy similar en el sistema (Similitud: ${Math.round(existingFace.similarity)}%)`,
-                similarity: existingFace.similarity,
-                faceId: existingFace.faceId
-              }, { status: 409 });
+
+              try {
+                // --- INTENTAR ELIMINAR EL HUÉRFANO ---
+                // Ahora TypeScript sabe que existingFace.faceId es un string aquí
+                const deletedIds = await deleteFace(existingFace.faceId); 
+
+                if (deletedIds && deletedIds.length > 0 && deletedIds[0] === existingFace.faceId) {
+                  console.log(`Rostro huérfano ${deletedIds[0]} eliminado exitosamente de Rekognition.`);
+                  // NO retornar nada aquí. El flujo continuará fuera de este bloque `if (existingFace)`
+                  // hacia la indexación del nuevo rostro.
+                } else {
+                  // La eliminación falló o no devolvió lo esperado
+                  console.error(`No se pudo eliminar el rostro huérfano ${existingFace.faceId} de Rekognition o la respuesta fue inesperada.`);
+                  // Devolver error 500 para indicar fallo en la limpieza
+                  return NextResponse.json({
+                    ok: false,
+                    error: 'Error al limpiar rostro huérfano',
+                    message: `No se pudo eliminar automáticamente el rostro huérfano ${existingFace.faceId} de AWS Rekognition. Intente de nuevo o contacte soporte.`,
+                    faceId: existingFace.faceId
+                  }, { status: 500 });
+                }
+              } catch (deleteError: unknown) {
+                // Error durante la llamada a deleteFace
+                const errorMessage = deleteError instanceof Error ? deleteError.message : 'Ocurrió un error interno al intentar eliminar el rostro huérfano de AWS Rekognition.';
+                console.error(`Error crítico al intentar eliminar rostro huérfano ${existingFace.faceId}:`, deleteError);
+                 return NextResponse.json({
+                  ok: false,
+                  error: 'Error al limpiar rostro huérfano',
+                  message: errorMessage,
+                  faceId: existingFace.faceId
+                }, { status: 500 });
+              }
+              // Si la eliminación fue exitosa, salimos de este 'else' y continuamos el flujo normal.
             }
+          } else {
+             // --- CASO: SIMILITUD BAJA ---
+             // Similitud no es suficientemente alta, tratar como si no existiera para el bloqueo.
+             // Permitir que el flujo continúe hacia la indexación normal.
+             console.log(`Similitud (${existingFace.similarity}%) por debajo del umbral de bloqueo (90%). Se tratará como rostro nuevo.`);
           }
-          
-          // Para similitudes menores, mostrar advertencia pero permitir continuar
-          console.log(`Similitud moderada (${existingFace.similarity}%), mostrando advertencia pero permitiendo continuar`);
         } else {
-          console.log("No se encontraron rostros similares en la colección");
+          // --- CASO: NO SE ENCONTRARON ROSTROS SIMILARES ---
+          console.log("No se encontraron rostros similares en la colección.");
+          // El flujo continuará normalmente hacia la indexación.
         }
-      } catch (error) {
-        console.error("Error al verificar rostro existente:", error);
-        // No retornamos error aquí para permitir continuar con el proceso
+      // Mantener el bloque catch existente para la verificación
+      } catch (error: unknown) {
+        console.error("Error durante la verificación de rostro existente:", error);
+        const message = error instanceof Error ? error.message : 'Ocurrió un error interno al verificar si el rostro ya existe.';
+         return NextResponse.json({
+            ok: false,
+            error: 'Error verificando rostro',
+            message: message
+          }, { status: 500 });
       }
     } else {
-      console.log("Omitiendo verificación de rostro existente debido a registro forzado");
+      console.log("Omitiendo verificación de rostro existente debido a registro forzado.");
     }
 
-    console.log(`Indexando rostro para empleado ${employeeId}. Tamaño de imagen: ${imageData.length} bytes`);
+    // ----- Flujo de Indexación Normal ----- 
+    // (Este código se ejecutará si no se encontró rostro, si la similitud era baja,
+    // o si se encontró un huérfano y se eliminó exitosamente)
+    console.log(`Procediendo a indexar rostro para empleado ${employeeId}...`);
     
     try {
       // Guardar el snapshot inicial en S3
@@ -223,10 +273,9 @@ export async function POST(request: Request) {
       
       // Guardar datos del empleado en Supabase
       try {
-        // Determinar si se pudo guardar el snapshot
         const hasSnapshot = !!snapshotUrl;
         
-        console.log("Intentando guardar en Supabase:", {
+        console.log("Intentando guardar en Supabase (Admin):", {
           name,
           employee_id: employeeId,
           face_data: faceId,
@@ -234,80 +283,76 @@ export async function POST(request: Request) {
           has_snapshot: hasSnapshot
         });
         
-        const { error: insertError } = await supabase
+        const { error: insertError } = await supabaseAdmin
           .from("employees")
           .insert({
             name,
             employee_id: employeeId,
             face_data: faceId,
-            snapshot_url: snapshotUrl || null, // Guardar la URL del snapshot si está disponible
-            has_snapshot: hasSnapshot // Campo adicional para indicar si se guardó el snapshot
+            snapshot_url: snapshotUrl || null, 
+            has_snapshot: hasSnapshot 
           });
 
         if (insertError) {
-          console.error("Error al guardar en Supabase:", {
-            code: insertError.code,
-            message: insertError.message,
-            details: insertError.details,
-            hint: insertError.hint
-          });
-          
-          // Si el error es de duplicación de ID de empleado
-          if (insertError.code === "23505") {
-            return NextResponse.json(
-              { message: `El ID de empleado ${employeeId} ya está registrado en el sistema` },
-              { status: 409 }
-            );
+          console.error("Error al guardar en Supabase (Admin):", insertError);
+          // Intentar Rollback en Rekognition
+          try { 
+            console.warn(`Error al guardar en DB. Rollback: Eliminando rostro ${faceId} de Rekognition...`);
+            await deleteFace(faceId); 
+            console.log(`Rollback exitoso: Rostro ${faceId} eliminado de Rekognition.`);
+          } catch (rollbackError) { 
+              console.error(`Error crítico: Falló el guardado en DB y también falló el rollback de Rekognition para ${faceId}:`, rollbackError);
           }
           
-          return NextResponse.json(
-            { message: "Error al guardar en la base de datos", details: insertError },
-            { status: 500 }
-          );
+          return NextResponse.json({
+            ok: false,
+            error: 'Error al guardar empleado',
+            message: insertError.message,
+            details: insertError
+          }, { status: 500 });
         }
         
-        console.log("Datos guardados exitosamente en Supabase");
-      } catch (dbError) {
-        console.error("Error al interactuar con la base de datos:", dbError);
-        return NextResponse.json({
-          ok: false,
-          error: 'Error al guardar en la base de datos',
-          details: dbError instanceof Error ? { message: dbError.message } : { message: 'Error desconocido' }
-        }, { status: 500 });
+        console.log("Datos guardados exitosamente en Supabase (Admin)");
+      } catch (dbError: unknown) {
+         console.error("Error inesperado durante el guardado en Supabase:", dbError);
+         const message = dbError instanceof Error ? dbError.message : 'Error desconocido guardando en DB';
+         // Aquí también podría ser útil intentar rollback de Rekognition si faceId ya se obtuvo
+         if (faceId) {
+             try { 
+                 console.warn(`Error en DB. Rollback: Intentando eliminar rostro ${faceId} de Rekognition...`);
+                 await deleteFace(faceId); 
+                 console.log(`Rollback por error DB: Rostro ${faceId} eliminado.`);
+             } catch (rbErr) { 
+                 // Loguear el error del rollback
+                 console.error(`Fallo el ROLLBACK de Rekognition para ${faceId} tras error de DB:`, rbErr); 
+             }
+         }
+         return NextResponse.json({ ok: false, error: 'Error interno guardando empleado', message }, { status: 500 });
       }
+      
+      // Respuesta exitosa final
+      console.log(`Empleado ${employeeId} registrado exitosamente con FaceId ${faceId}.`);
+      return NextResponse.json({ ok: true, faceId }, { status: 200 });
 
-      return NextResponse.json({ 
-        success: true,
-        faceId,
-        employee: {
-          id: employeeId,
-          name: name,
-          registeredAt: new Date().toISOString(),
-          snapshotUrl: snapshotUrl || null
-        },
-        message: forceRegister 
-          ? "Empleado registrado exitosamente (registro forzado)" 
-          : "Empleado registrado exitosamente",
-        forced: forceRegister
-      });
-    } catch (error: unknown) {
-      console.error("Error al indexar rostro:", error);
-      return NextResponse.json(
-        { 
-          message: "Error al indexar rostro", 
-          details: error instanceof Error ? error.message : "Error desconocido" 
-        },
-        { status: 500 }
-      );
+    // Catch para el bloque de indexación/guardado
+    } catch (indexError: unknown) {
+      console.error("Error durante la indexación del rostro o guardado en DB:", indexError);
+      const message = indexError instanceof Error ? indexError.message : 'Ocurrió un error interno al procesar el registro del rostro.';
+      return NextResponse.json({
+        ok: false,
+        error: 'Error en la indexación o registro',
+        message: message
+      }, { status: 500 });
     }
+
+  // Catch general para toda la función POST
   } catch (error: unknown) {
-    console.error("Error general:", error);
-    return NextResponse.json(
-      { 
-        message: "Error en el servidor", 
-        details: error instanceof Error ? error.message : "Error desconocido" 
-      },
-      { status: 500 }
-    );
+    console.error("Error inesperado en el manejador POST /api/index-face:", error);
+    const message = error instanceof Error ? error.message : 'Ocurrió un error inesperado.';
+    return NextResponse.json({
+      ok: false,
+      error: 'Error interno del servidor',
+      message: message
+    }, { status: 500 });
   }
 } 

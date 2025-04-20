@@ -1,4 +1,4 @@
-import { RekognitionClient, IndexFacesCommand, SearchFacesByImageCommand, CreateCollectionCommand, ListCollectionsCommand, Attribute, QualityFilter } from "@aws-sdk/client-rekognition"
+import { RekognitionClient, IndexFacesCommand, SearchFacesByImageCommand, CreateCollectionCommand, ListCollectionsCommand, Attribute, QualityFilter, DeleteFacesCommand, DeleteFacesCommandInput, DeleteFacesCommandOutput } from "@aws-sdk/client-rekognition"
 
 const rekognition = typeof window === 'undefined' ? new RekognitionClient({
   region: process.env.AWS_REGION,
@@ -8,7 +8,7 @@ const rekognition = typeof window === 'undefined' ? new RekognitionClient({
   },
 }) : null;
 
-const COLLECTION_ID = "EmployeeFaces"
+const COLLECTION_ID = process.env.AWS_REKOGNITION_COLLECTION_ID! // Asegúrate que esta variable esté definida
 
 /**
  * Verifica si un rostro ya existe en la colección
@@ -291,5 +291,50 @@ export async function searchFacesByImage(imageData: string) {
   } catch (error) {
     console.error("Error al buscar rostro:", error);
     return { status: 'ERROR', error };
+  }
+}
+
+/**
+ * Elimina un rostro específico de la colección de Rekognition usando su FaceId.
+ * @param faceId El ID del rostro a eliminar.
+ * @returns Un array con los IDs de los rostros eliminados (debería ser solo uno).
+ * @throws Error si falla la operación o faltan configuraciones.
+ */
+export async function deleteFace(faceId: string): Promise<string[] | undefined> {
+  if (!rekognition) {
+    throw new Error("Cliente de Rekognition no inicializado en el servidor.");
+  }
+  if (!COLLECTION_ID) {
+    throw new Error("AWS_REKOGNITION_COLLECTION_ID no está configurado en las variables de entorno.");
+  }
+  if (!faceId) {
+      throw new Error("Se requiere un faceId para eliminar.");
+  }
+
+  const params: DeleteFacesCommandInput = {
+    CollectionId: COLLECTION_ID,
+    FaceIds: [faceId], // DeleteFaces espera un array de IDs
+  };
+
+  try {
+    console.log(`Intentando eliminar FaceId: ${faceId} de la colección ${COLLECTION_ID}`);
+    const command = new DeleteFacesCommand(params);
+    const response: DeleteFacesCommandOutput = await rekognition.send(command);
+
+    console.log("Respuesta de DeleteFaces:", response);
+
+    if (!response.DeletedFaces || response.DeletedFaces.length === 0) {
+        console.warn(`No se confirmó la eliminación de ${faceId}. La respuesta no incluyó el ID en DeletedFaces.`);
+        // Podrías lanzar un error aquí si quieres ser más estricto
+        // throw new Error(`No se pudo confirmar la eliminación de ${faceId}`);
+    }
+
+    // Devuelve el array de IDs eliminados (puede estar vacío si algo raro pasó)
+    return response.DeletedFaces; 
+
+  } catch (error) {
+    console.error(`Error al eliminar FaceId ${faceId} de Rekognition:`, error);
+    // Re-lanzar el error para que sea manejado por el llamador
+    throw error;
   }
 }
