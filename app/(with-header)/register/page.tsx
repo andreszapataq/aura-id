@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
@@ -15,12 +15,12 @@ export default function Register() {
   const [livenessStatus, setLivenessStatus] = useState<boolean>(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [registeredEmployee, setRegisteredEmployee] = useState<{ 
+    employee_id: string, 
     name: string, 
-    employeeId: string, 
-    registeredAt: string 
+    registered_at?: string 
   } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [countdown, setCountdown] = useState(5)
+  const [countdown, setCountdown] = useState(10)
 
   const handleLivenessSuccess = (referenceImage: string, sessionId: string) => {
     console.log("Verificación facial exitosa", { sessionId });
@@ -73,18 +73,42 @@ export default function Register() {
 
       const data = await response.json()
 
-      if (!response.ok) {
-        setErrorMessage(data.error || "Error al registrar empleado")
-        return
+      if (!response.ok || !data.ok) {
+        setErrorMessage(data.error || data.message || "Error al registrar empleado")
+      } else {
+        console.log("API Response Data:", data);
+        const employeeData = data.employee;
+        const registeredAtFromApi = employeeData?.registered_at;
+        console.log("Received registered_at:", registeredAtFromApi);
+
+        setRegisteredEmployee({
+          employee_id: employeeData?.employee_id || employeeId,
+          name: employeeData?.name || name,
+          registered_at: registeredAtFromApi
+        })
+
+        // Iniciar el contador para redirección
+        const timer = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer)
+              router.push("/")
+              return 0
+            }
+            return prev - 1
+          })
+        }, 1000)
       }
+    } catch (error) {
+      console.error("Error inesperado al registrar:", error)
+      setErrorMessage("Ha ocurrido un error inesperado. Por favor, inténtelo nuevamente.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
-      setRegisteredEmployee({
-        name: data.name,
-        employeeId: data.employeeId,
-        registeredAt: data.registeredAt
-      })
-
-      // Iniciar el contador para redirección
+  useEffect(() => {
+    if (registeredEmployee && router) {
       const timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
@@ -95,11 +119,25 @@ export default function Register() {
           return prev - 1
         })
       }, 1000)
-    } catch (error) {
-      console.error("Error inesperado al registrar:", error)
-      setErrorMessage("Ha ocurrido un error inesperado. Por favor, inténtelo nuevamente.")
-    } finally {
-      setIsLoading(false)
+
+      return () => clearInterval(timer)
+    }
+  }, [registeredEmployee, router])
+
+  const formatDate = (dateString?: string): string => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return 'Fecha inválida';
+      }
+      return date.toLocaleString('es-CO', { 
+          year: 'numeric', month: 'long', day: 'numeric', 
+          hour: '2-digit', minute: '2-digit' 
+      }); 
+    } catch (e) {
+      console.error("Error formateando fecha:", e);
+      return 'Fecha inválida';
     }
   }
 
@@ -140,11 +178,11 @@ export default function Register() {
               </div>
               <div className="flex justify-between text-left">
                 <span className="text-gray-600">ID:</span>
-                <span className="font-medium text-gray-900">{registeredEmployee.employeeId}</span>
+                <span className="font-medium text-gray-900">{registeredEmployee.employee_id}</span>
               </div>
               <div className="flex justify-between text-left">
                 <span className="text-gray-600">Registrado:</span>
-                <span className="font-medium text-gray-900">{new Date(registeredEmployee.registeredAt).toLocaleString('es-CO')}</span>
+                <span className="font-medium text-gray-900">{formatDate(registeredEmployee.registered_at)}</span>
               </div>
             </div>
           </div>

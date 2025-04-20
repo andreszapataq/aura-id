@@ -274,24 +274,23 @@ export async function POST(request: Request) {
       // Guardar datos del empleado en Supabase
       try {
         const hasSnapshot = !!snapshotUrl;
-        
-        console.log("Intentando guardar en Supabase (Admin):", {
-          name,
-          employee_id: employeeId,
-          face_data: faceId,
-          snapshot_url: snapshotUrl || null,
-          has_snapshot: hasSnapshot
-        });
-        
-        const { error: insertError } = await supabaseAdmin
+        console.log("Intentando guardar en Supabase (Admin):", { name, employeeId, faceId });
+
+        // Usar supabaseAdmin para la inserción Y seleccionar created_at
+        // Supabase insert() puede no devolver la fila completa directamente en todos los casos.
+        // Primero insertamos, luego si es exitoso, podríamos hacer un select si fuera necesario,
+        // pero para la fecha, a menudo la columna 'created_at' es suficiente si se define en la DB.
+        const { data: insertedData, error: insertError } = await supabaseAdmin
           .from("employees")
           .insert({
             name,
             employee_id: employeeId,
             face_data: faceId,
-            snapshot_url: snapshotUrl || null, 
-            has_snapshot: hasSnapshot 
-          });
+            snapshot_url: snapshotUrl || null,
+            has_snapshot: hasSnapshot
+          })
+          .select('created_at') // Intentar seleccionar created_at
+          .single();
 
         if (insertError) {
           console.error("Error al guardar en Supabase (Admin):", insertError);
@@ -303,37 +302,41 @@ export async function POST(request: Request) {
           } catch (rollbackError) { 
               console.error(`Error crítico: Falló el guardado en DB y también falló el rollback de Rekognition para ${faceId}:`, rollbackError);
           }
-          
-          return NextResponse.json({
-            ok: false,
-            error: 'Error al guardar empleado',
-            message: insertError.message,
-            details: insertError
-          }, { status: 500 });
+          return NextResponse.json({ ok: false, error: 'Error al guardar empleado', message: insertError.message, details: insertError }, { status: 500 });
         }
-        
-        console.log("Datos guardados exitosamente en Supabase (Admin)");
+        console.log("Datos guardados exitosamente en Supabase (Admin)", insertedData);
+
+        // Obtener la fecha de registro ÚNICAMENTE de la base de datos
+        let registeredAt: string | undefined;
+        if (insertedData?.created_at && !isNaN(new Date(insertedData.created_at).getTime())) {
+            // Convertir a ISO string si es una fecha válida
+            registeredAt = new Date(insertedData.created_at).toISOString();
+        } else {
+            console.warn("No se pudo obtener o validar created_at desde Supabase. registered_at será undefined.");
+            // registeredAt permanecerá undefined
+        }
+        console.log("Fecha de registro (desde DB o undefined):", registeredAt); 
+
+        // ***** Respuesta exitosa final CON datos del empleado *****
+        console.log(`Empleado ${employeeId} registrado exitosamente con FaceId ${faceId}.`);
+        return NextResponse.json({ 
+          ok: true, 
+          faceId: faceId, 
+          employee: { 
+            employee_id: employeeId, 
+            name: name,             
+            // Enviar registeredAt (puede ser undefined si no se obtuvo)
+            registered_at: registeredAt 
+          } 
+        }, { status: 200 });
+
       } catch (dbError: unknown) {
          console.error("Error inesperado durante el guardado en Supabase:", dbError);
          const message = dbError instanceof Error ? dbError.message : 'Error desconocido guardando en DB';
-         // Aquí también podría ser útil intentar rollback de Rekognition si faceId ya se obtuvo
-         if (faceId) {
-             try { 
-                 console.warn(`Error en DB. Rollback: Intentando eliminar rostro ${faceId} de Rekognition...`);
-                 await deleteFace(faceId); 
-                 console.log(`Rollback por error DB: Rostro ${faceId} eliminado.`);
-             } catch (rbErr) { 
-                 // Loguear el error del rollback
-                 console.error(`Fallo el ROLLBACK de Rekognition para ${faceId} tras error de DB:`, rbErr); 
-             }
-         }
+         if (faceId) { try { await deleteFace(faceId); } catch (rbErr) { console.error(`Fallo rollback de Rekognition para ${faceId} tras error de DB:`, rbErr); } }
          return NextResponse.json({ ok: false, error: 'Error interno guardando empleado', message }, { status: 500 });
       }
       
-      // Respuesta exitosa final
-      console.log(`Empleado ${employeeId} registrado exitosamente con FaceId ${faceId}.`);
-      return NextResponse.json({ ok: true, faceId }, { status: 200 });
-
     // Catch para el bloque de indexación/guardado
     } catch (indexError: unknown) {
       console.error("Error durante la indexación del rostro o guardado en DB:", indexError);
