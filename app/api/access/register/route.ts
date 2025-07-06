@@ -1,10 +1,14 @@
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
 import { searchFacesByImage } from "@/lib/rekognition";
 
 export async function POST(request: Request) {
   try {
     const { imageData, type } = await request.json();
+
+    console.log('🔍 INICIO REGISTRO DE ACCESO');
+    console.log('📏 Tamaño de imagen recibida:', imageData ? imageData.length : 'no imageData');
+    console.log('🎯 Tipo de registro:', type);
 
     if (!imageData) {
       return NextResponse.json(
@@ -21,35 +25,73 @@ export async function POST(request: Request) {
     }
 
     // Buscar rostro en la colección
+    console.log('🔎 Ejecutando searchFacesByImage...');
     const searchResults = await searchFacesByImage(imageData);
+    console.log('📊 Resultado de searchFacesByImage:', JSON.stringify(searchResults, null, 2));
 
     if (!searchResults || !searchResults.faceId) {
+      console.log('❌ No se encontró faceId en searchResults');
       return NextResponse.json(
         { 
           error: "No se pudo identificar al empleado con la imagen proporcionada",
-          status: "FACE_NOT_FOUND"
+          status: "FACE_NOT_FOUND",
+          debug: {
+            searchResults: searchResults,
+            timestamp: new Date().toISOString()
+          }
         },
         { status: 404 }
       );
     }
 
+    console.log('✅ FaceId encontrado:', searchResults.faceId);
+    console.log('📈 Similitud:', searchResults.similarity);
+
     // Buscar empleado asociado al rostro
-    const { data: employee, error: empError } = await supabase
+    console.log('🔍 Buscando empleado con face_data =', searchResults.faceId);
+    const { data: employee, error: empError } = await supabaseAdmin
       .from("employees")
       .select("*")
       .eq("face_data", searchResults.faceId)
       .single();
 
+    console.log('👤 Resultado búsqueda empleado:', {
+      employee: employee,
+      error: empError,
+      faceIdBuscado: searchResults.faceId
+    });
+
     if (empError || !employee) {
-      console.error("Error al buscar empleado:", empError);
+      console.error("❌ Error al buscar empleado:", empError);
+      console.log('🔍 Verificando todos los empleados en la base de datos...');
+      
+      // Debug: listar todos los empleados para ver qué face_data tienen
+      const { data: allEmployees, error: allEmpError } = await supabaseAdmin
+        .from("employees")
+        .select("id, name, employee_id, face_data");
+      
+      console.log('📋 Todos los empleados:', allEmployees);
+      console.log('❌ Error al listar empleados:', allEmpError);
+      
       return NextResponse.json(
-        { error: "No se encontró el empleado asociado a este rostro" },
+        { 
+          error: "No se encontró el empleado asociado a este rostro",
+          debug: {
+            searchResults: searchResults,
+            faceIdBuscado: searchResults.faceId,
+            allEmployees: allEmployees,
+            empError: empError,
+            timestamp: new Date().toISOString()
+          }
+        },
         { status: 404 }
       );
     }
 
+    console.log('✅ Empleado encontrado:', employee.name);
+
     // Obtener último registro para verificar si el tipo es válido
-    const { data: lastLog, error: lastLogError } = await supabase
+    const { data: lastLog, error: lastLogError } = await supabaseAdmin
       .from("access_logs")
       .select("*")
       .eq("employee_id", employee.id)
@@ -91,7 +133,7 @@ export async function POST(request: Request) {
           23, 59, 59
         );
         
-        await supabase.from("access_logs").insert({
+        await supabaseAdmin.from("access_logs").insert({
           employee_id: employee.id,
           timestamp: closingTime.toISOString(),
           type: "check_out",
@@ -104,7 +146,7 @@ export async function POST(request: Request) {
 
     // Registrar nuevo acceso
     const now = new Date();
-    const { error: logError } = await supabase
+    const { error: logError } = await supabaseAdmin
       .from("access_logs")
       .insert({
         employee_id: employee.id,
@@ -121,6 +163,8 @@ export async function POST(request: Request) {
       );
     }
 
+    console.log('✅ Acceso registrado exitosamente para:', employee.name);
+
     return NextResponse.json({
       success: true,
       employee: {
@@ -133,7 +177,7 @@ export async function POST(request: Request) {
       autoCloseGenerated
     });
   } catch (error) {
-    console.error("Error en API de registro de acceso:", error);
+    console.error("💥 Error en API de registro de acceso:", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }

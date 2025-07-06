@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const validLimit = Math.min(Math.max(1, limit), 20); // Entre 1 y 20
     
     // Obtener los últimos registros de acceso
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("access_logs")
       .select(`
         id,
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
     
     // Transformar los datos para que sean más fáciles de usar en el cliente
     const logs = data.map(log => {
-      // TypeScript seguro usando tipado dinámico
-      const employee = log.employees as any;
+      // TypeScript seguro - employees es un array, tomar el primer elemento
+      const employee = (log.employees as { name: string; employee_id: string }[])?.[0] || null;
       
       return {
         id: log.id,

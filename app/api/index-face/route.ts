@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { indexFace, checkFaceExists, deleteFace } from '@/lib/rekognition';
-// Quitar la importación del cliente browser ya que no se usa aquí
-// import { supabase as supabaseBrowserClient } from '@/lib/supabase'; 
-// Importar createClient genérico para el admin client
-import { createClient } from '@supabase/supabase-js'; 
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // Cliente de S3 para almacenar snapshots iniciales
@@ -47,14 +44,6 @@ async function saveImageToS3(imageData: string, employeeId: string): Promise<str
 }
 
 export async function POST(request: Request) {
-  // Crear cliente Supabase Admin DENTRO de la función POST
-  // Este cliente usa la Service Role Key y BYPASSEA RLS.
-  const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!, // Usar SUPABASE_URL (no NEXT_PUBLIC)
-      process.env.SUPABASE_SERVICE_ROLE_KEY!, // ¡Clave de Servicio!
-      { auth: { persistSession: false } } // No necesitamos persistir sesión para el admin
-  );
-
   try {
     // Verificar si se está forzando el registro
     const url = new URL(request.url);

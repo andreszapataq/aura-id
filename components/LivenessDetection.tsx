@@ -7,8 +7,19 @@ import { FaceLivenessDetector } from '@aws-amplify/ui-react-liveness';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
 
-// Reemplázala con esta configuración mínima
-Amplify.configure(awsconfig);
+// Configurar Amplify y verificar configuración
+try {
+  console.log('Configurando AWS Amplify con:', {
+    region: awsconfig.aws_project_region,
+    identityPoolId: awsconfig.aws_cognito_identity_pool_id,
+    hasIdentityPool: !!awsconfig.aws_cognito_identity_pool_id
+  });
+  
+  Amplify.configure(awsconfig);
+  console.log('AWS Amplify configurado exitosamente');
+} catch (error) {
+  console.error('Error al configurar AWS Amplify:', error);
+}
 
 interface LivenessDetectionProps {
   onSuccess: (referenceImage: string, sessionId: string) => void;
@@ -25,21 +36,20 @@ export default function LivenessDetection({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionUrl, setSessionUrl] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 3;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'success' | 'error' | null>(null);
 
   // Función para crear una nueva sesión
-  const createNewSession = useCallback(async () => {
+  const createNewSession = useCallback(async (currentRetryCount = 0) => {
     setIsLoading(true);
     setError(null);
     setSessionUrl(null);
     
     try {
       // If we've exceeded max retries, show a more permanent error
-      if (retryCount >= MAX_RETRIES) {
+      if (currentRetryCount >= MAX_RETRIES) {
         setError('Se ha excedido el número máximo de intentos. Por favor, inténtelo más tarde.');
         setIsLoading(false);
         return;
@@ -71,8 +81,6 @@ export default function LivenessDetection({
       }
       
       setSessionId(data.sessionId);
-      // Reset retry count on success
-      setRetryCount(0);
     } catch (error) {
       console.error('Error detallado al crear la sesión:', error);
       
@@ -87,23 +95,28 @@ export default function LivenessDetection({
       onError(error instanceof Error ? error : new Error('Error desconocido'));
       
       // Automatically retry after a delay for certain errors
-      if (retryCount < MAX_RETRIES) {
-        console.log(`Reintentando en 5 segundos (intento ${retryCount + 1} de ${MAX_RETRIES})...`);
+      if (currentRetryCount < MAX_RETRIES) {
+        const nextRetryCount = currentRetryCount + 1;
+        console.log(`Reintentando en 5 segundos (intento ${nextRetryCount} de ${MAX_RETRIES})...`);
         setTimeout(() => {
-          setRetryCount(prev => prev + 1);
           setIsLoading(true);
-          createNewSession();
+          createNewSession(nextRetryCount);
         }, 5000);
       }
     } finally {
       setIsLoading(false);
     }
-  }, [onError, retryCount, MAX_RETRIES]);
+  }, [onError, MAX_RETRIES]);
 
-  // Crear sesión al montar el componente
+  // Crear sesión al montar el componente (solo una vez)
   useEffect(() => {
-    createNewSession();
-  }, [createNewSession]);
+    createNewSession(0);
+  }, []); // Sin dependencias para evitar bucle infinito
+
+  // Función wrapper para handlers de botón
+  const handleRetryClick = () => {
+    createNewSession(0);
+  };
 
   // Función para capturar imagen de la webcam
   const captureImageFromWebcam = useCallback(async (): Promise<string | null> => {
@@ -324,7 +337,7 @@ export default function LivenessDetection({
       <div className="text-center p-4 bg-red-100 text-red-800 rounded-lg">
         <p>No se pudo iniciar la sesión de verificación.</p>
         <button 
-          onClick={createNewSession}
+          onClick={handleRetryClick}
           className="mt-3 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
           Intentar nuevamente
@@ -347,7 +360,7 @@ export default function LivenessDetection({
           Completar verificación
         </a>
         <button 
-          onClick={createNewSession}
+          onClick={handleRetryClick}
           className="mt-3 ml-2 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
         >
           Iniciar nueva verificación
@@ -362,7 +375,7 @@ export default function LivenessDetection({
       <div className="text-center p-4 bg-red-100 text-red-800 rounded-lg">
         <p>{error}</p>
         <button 
-          onClick={createNewSession}
+          onClick={handleRetryClick}
           className="mt-3 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
           Intentar nuevamente
@@ -387,59 +400,68 @@ export default function LivenessDetection({
         onError={(error) => {
           // Intentar extraer información útil del error
           let errorMessage = 'Desconocido';
+          let shouldRetry = false;
           
           try {
+            console.log('Error completo recibido:', error);
+            console.log('Tipo de error:', typeof error);
+            console.log('Keys del error:', error ? Object.keys(error) : []);
+            
             if (error) {
+              const errorStr = String(error);
+              const errorObj = typeof error === 'object' ? error : {};
+              
+              // Manejo específico para errores comunes
+              if (errorStr.includes('credentials') || errorStr.includes('CredentialsError')) {
+                errorMessage = 'Error de credenciales de AWS. Verifique la configuración del Identity Pool.';
+                console.error('❌ Error de credenciales AWS:', error);
+              }
+              else if (errorStr.includes('network') || errorStr.includes('NetworkError')) {
+                errorMessage = 'Error de conexión de red. Verifique su conexión a internet.';
+                shouldRetry = true;
+              }
+              else if ('state' in errorObj && errorObj.state === 'SERVER_ERROR') {
+                console.log('Detectado error de servidor AWS:', error);
+                errorMessage = 'Error en el servidor de verificación AWS.';
+                shouldRetry = true;
+              }
+              else if (errorStr.includes('region') || errorStr.includes('identity pool')) {
+                errorMessage = 'Error de configuración de AWS. Verifique las variables de entorno.';
+                console.error('❌ Error de configuración AWS:', error);
+              }
               // Intentar convertir el error a string JSON si es posible
-              if (typeof error === 'object') {
+              else if (typeof error === 'object') {
                 errorMessage = JSON.stringify(error, Object.getOwnPropertyNames(error));
-                
-                // Manejo específico para SERVER_ERROR
-                if (error.state === 'SERVER_ERROR') {
-                  console.log('Detectado error de servidor AWS:', error);
-                  errorMessage = 'Error en el servidor de verificación. Por favor, espere mientras reintentamos automáticamente.';
-                  
-                  // Reintentar automáticamente después de un error de servidor
-                  setTimeout(() => {
-                    setRetryCount(prev => prev + 1);
-                    createNewSession();
-                  }, 3000);
-                  
-                  // Retornar temprano para evitar mostrar el mensaje de error
-                  setError('Reintentando verificación automáticamente...');
-                  return Promise.resolve();
-                }
               } else {
-                errorMessage = String(error);
+                errorMessage = errorStr;
               }
             }
-          } catch {
+          } catch (parseError) {
+            console.error('Error al procesar el error:', parseError);
             errorMessage = 'Error no serializable';
           }
           
-          console.error('Error detallado en la verificación de presencia:', {
+          console.error('🔍 Error detallado en la verificación de presencia:', {
             error,
             errorType: typeof error,
             errorKeys: error ? Object.keys(error) : [],
-            errorMessage
+            errorMessage,
+            shouldRetry
           });
           
-          // Verificar si es un error vacío o un error de servidor genérico
-          if (errorMessage === '{}' || errorMessage.includes('SERVER_ERROR')) {
-            errorMessage = 'Error en el servidor de verificación. Reintentando automáticamente...';
-            
-            // Reintentar automáticamente después de un error de servidor genérico
-            setTimeout(() => {
-              setRetryCount(prev => prev + 1);
-              createNewSession();
-            }, 5000);
-            
+          // Decidir si reintentar automáticamente
+          if (shouldRetry && (errorMessage === '{}' || errorMessage.includes('SERVER_ERROR') || errorMessage.includes('network'))) {
+            console.log('⏳ Reintentando automáticamente...');
             setError('Reintentando verificación automáticamente...');
+            
+            setTimeout(() => {
+              createNewSession(0);
+            }, 3000);
           } else {
             setError(`Error en la verificación de presencia: ${errorMessage}`);
+            onError(new Error(`Error en la verificación de presencia: ${errorMessage}`));
           }
           
-          onError(new Error(`Error en la verificación de presencia: ${errorMessage}`));
           return Promise.resolve();
         }}
         onUserCancel={() => {

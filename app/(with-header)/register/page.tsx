@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
@@ -20,7 +20,7 @@ export default function Register() {
     registered_at?: string 
   } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [countdown, setCountdown] = useState(10)
+
 
   const handleLivenessSuccess = (referenceImage: string, sessionId: string) => {
     console.log("Verificación facial exitosa", { sessionId });
@@ -86,18 +86,6 @@ export default function Register() {
           name: employeeData?.name || name,
           registered_at: registeredAtFromApi
         })
-
-        // Iniciar el contador para redirección
-        const timer = setInterval(() => {
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(timer)
-              router.push("/")
-              return 0
-            }
-            return prev - 1
-          })
-        }, 1000)
       }
     } catch (error) {
       console.error("Error inesperado al registrar:", error)
@@ -107,22 +95,7 @@ export default function Register() {
     }
   }
 
-  useEffect(() => {
-    if (registeredEmployee && router) {
-      const timer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer)
-            router.push("/")
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
 
-      return () => clearInterval(timer)
-    }
-  }, [registeredEmployee, router])
 
   const formatDate = (dateString?: string): string => {
     if (!dateString) return 'N/A';
@@ -192,8 +165,8 @@ export default function Register() {
           </p>
           
           <div className="flex flex-col space-y-4">
-            <p className="text-sm text-gray-500">
-              Redirección en <span className="font-bold">{countdown}</span> segundos...
+            <p className="text-sm text-gray-600 mb-2">
+              ¿Qué desea hacer a continuación?
             </p>
             <div className="flex space-x-4 justify-center">
               <button 

@@ -8,7 +8,7 @@ const rekognition = typeof window === 'undefined' ? new RekognitionClient({
   },
 }) : null;
 
-const COLLECTION_ID = process.env.AWS_REKOGNITION_COLLECTION_ID! // Asegúrate que esta variable esté definida
+const COLLECTION_ID = process.env.AWS_REKOGNITION_COLLECTION_ID || "EmployeesFaces" // Asegúrate que esta variable esté definida
 
 /**
  * Verifica si un rostro ya existe en la colección
@@ -265,32 +265,68 @@ export async function searchFacesByImage(imageData: string) {
       throw new Error("Cliente de Rekognition no inicializado");
     }
     
+    // Verificar si la colección existe
+    try {
+      const listCommand = new ListCollectionsCommand({});
+      const collections = await rekognition.send(listCommand);
+      
+      if (!collections?.CollectionIds?.includes(COLLECTION_ID)) {
+        console.log(`La colección ${COLLECTION_ID} no existe. No hay rostros registrados.`);
+        return null;
+      }
+    } catch (error) {
+      console.error("Error al verificar la colección:", error);
+      throw error;
+    }
+    
     const params = {
       CollectionId: COLLECTION_ID,
       Image: {
         Bytes: Buffer.from(base64Data, 'base64')
       },
-      FaceMatchThreshold: 90,
-      MaxFaces: 1
+      FaceMatchThreshold: 80, // Usar el mismo umbral que en checkFaceExists
+      MaxFaces: 5 // Buscar hasta 5 rostros similares
     };
     
+    console.log(`Buscando rostros similares con umbral de similitud: 80%`);
     const command = new SearchFacesByImageCommand(params);
     const response = await rekognition.send(command);
     
     if (!response.FaceMatches || response.FaceMatches.length === 0) {
-      return { status: 'FACE_NOT_FOUND' };
+      console.log("No se encontraron rostros similares en la colección");
+      return null;
     }
     
-    const bestMatch = response.FaceMatches[0];
+    // Ordenar por similitud (de mayor a menor)
+    const matches = response.FaceMatches.sort((a, b) => 
+      (b.Similarity || 0) - (a.Similarity || 0)
+    );
+    
+    console.log(`Se encontraron ${matches.length} rostros similares. Mejor coincidencia: ${matches[0].Similarity}%, ID: ${matches[0].Face?.FaceId}`);
+    
+    // Retornar información del rostro más similar
     return {
-      status: 'SUCCESS',
-      faceId: bestMatch.Face?.FaceId,
-      similarity: bestMatch.Similarity,
-      boundingBox: bestMatch.Face?.BoundingBox
+      faceId: matches[0].Face?.FaceId,
+      similarity: matches[0].Similarity,
+      externalImageId: matches[0].Face?.ExternalImageId,
+      matches: matches.map(match => ({
+        faceId: match.Face?.FaceId,
+        similarity: match.Similarity,
+        externalImageId: match.Face?.ExternalImageId
+      }))
     };
   } catch (error) {
+    // Si el error es porque no hay rostros en la imagen, retornar null
+    if (error instanceof Error && 
+        (error.name === 'InvalidParameterException' || 
+         error.message.includes('No face detected') ||
+         error.message.includes('There are no faces in the collection'))) {
+      console.log("No se detectó ningún rostro en la imagen o la colección está vacía");
+      return null;
+    }
+    
     console.error("Error al buscar rostro:", error);
-    return { status: 'ERROR', error };
+    throw error;
   }
 }
 
