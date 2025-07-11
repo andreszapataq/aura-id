@@ -19,6 +19,21 @@ export async function GET(request: Request) {
       );
     }
 
+    // Crear fechas con zona horaria de Colombia (UTC-5)
+    const startDateTime = new Date(`${startDate}T00:00:00.000-05:00`);
+    const endDateTime = new Date(`${endDate}T23:59:59.999-05:00`);
+    
+    // Convertir a ISO strings para la consulta
+    const startISO = startDateTime.toISOString();
+    const endISO = endDateTime.toISOString();
+
+    console.log("🕐 API: Fechas convertidas:", { 
+      startISO, 
+      endISO, 
+      startLocal: startDateTime.toLocaleString("es-CO", { timeZone: "America/Bogota" }),
+      endLocal: endDateTime.toLocaleString("es-CO", { timeZone: "America/Bogota" })
+    });
+
     let query = supabaseAdmin
       .from("access_logs")
       .select(`
@@ -32,8 +47,8 @@ export async function GET(request: Request) {
           employee_id
         )
       `)
-      .gte("timestamp", `${startDate}T00:00:00`)
-      .lte("timestamp", `${endDate}T23:59:59`)
+      .gte("timestamp", startISO)
+      .lte("timestamp", endISO)
       .order("timestamp", { ascending: false });
 
     // Aplicar filtro de empleado si está seleccionado

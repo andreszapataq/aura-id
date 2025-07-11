@@ -50,9 +50,12 @@ export default function Reports() {
 
   // Función para ampliar el rango de búsqueda
   const expandDateRange = async () => {
-    const end = new Date()
-    const start = new Date()
-    start.setFullYear(start.getFullYear() - 1) // Ampliar a 1 año
+    // Crear fechas en zona horaria de Colombia
+    const end = new Date();
+    const start = new Date();
+    start.setFullYear(start.getFullYear() - 1); // Ampliar a 1 año
+    
+    // Formatear fechas para inputs (formato YYYY-MM-DD)
     const newStartDate = start.toISOString().split("T")[0];
     const newEndDate = end.toISOString().split("T")[0];
     
@@ -71,38 +74,27 @@ export default function Reports() {
       const params = new URLSearchParams({
         startDate: newStartDate,
         endDate: newEndDate,
-        employeeId: selectedEmployee
       });
-
-      console.log("🔎 Expand: Ejecutando consulta...");
+      
+      if (selectedEmployee !== "all") {
+        params.append("employeeId", selectedEmployee);
+      }
+      
       const response = await fetch(`/api/reports/access-logs?${params}`);
       const result = await response.json();
-
-      console.log("📊 Expand: Resultado consulta:", result);
-      console.log("📈 Expand: Cantidad de registros:", result.reports?.length || 0);
-
+      
+      console.log("📊 Expand: Resultado generateReport:", result);
+      
       if (!response.ok) {
-        console.error("❌ Expand: Error en consulta:", result.error);
-        throw new Error(result.error || "Error al obtener reportes");
+        console.error("❌ Expand: Error en generateReport:", result.error);
+        throw new Error(result.error || "Error al generar reporte");
       }
-
-      const reportData = result.reports.map((log: ReportAPIResponse) => ({
-        id: log.id,
-        name: log.name,
-        employeeId: log.employeeId,
-        timestamp: new Date(log.timestamp).toLocaleString("es-CO", {
-          dateStyle: "medium",
-          timeStyle: "medium",
-        }),
-        type: log.type,
-        auto_generated: log.auto_generated
-      }));
-
-      console.log("✅ Expand: Datos procesados:", reportData.length);
-      setReportData(reportData);
+      
+      console.log("✅ Expand: Reporte generado con", result.reports?.length || 0, "registros");
+      setReportData(result.reports || []);
     } catch (error) {
       console.error("💥 Expand: Error generating report:", error);
-      alert("Error al generar el reporte. Por favor, intenta de nuevo.");
+      setReportData([]);
     } finally {
       setLoading(false);
     }
