@@ -1,8 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
-import { PostgrestError } from "@supabase/supabase-js"
 import { motion } from 'framer-motion'
 
 interface ReportEntry {
@@ -20,15 +18,13 @@ interface Employee {
   employee_id: string
 }
 
-interface AccessLog {
+interface ReportAPIResponse {
   id: number;
+  name: string;
+  employeeId: string;
   timestamp: string;
   type: string;
   auto_generated: boolean;
-  employees: {
-    name: string;
-    employee_id: string;
-  } | null;
 }
 
 export default function Reports() {
@@ -41,10 +37,10 @@ export default function Reports() {
   const [filterApplied, setFilterApplied] = useState(false)
 
   useEffect(() => {
-    // Establecer rango de fechas por defecto (último mes)
+    // Establecer rango de fechas por defecto (últimos 3 meses para incluir más registros)
     const end = new Date()
     const start = new Date()
-    start.setMonth(start.getMonth() - 1)
+    start.setMonth(start.getMonth() - 3)
     setEndDate(end.toISOString().split("T")[0])
     setStartDate(start.toISOString().split("T")[0])
 
@@ -52,17 +48,84 @@ export default function Reports() {
     fetchEmployees()
   }, [])
 
+  // Función para ampliar el rango de búsqueda
+  const expandDateRange = async () => {
+    const end = new Date()
+    const start = new Date()
+    start.setFullYear(start.getFullYear() - 1) // Ampliar a 1 año
+    const newStartDate = start.toISOString().split("T")[0];
+    const newEndDate = end.toISOString().split("T")[0];
+    
+    setEndDate(newEndDate);
+    setStartDate(newStartDate);
+    
+    // Generar reporte automáticamente con el nuevo rango
+    setLoading(true)
+    setFilterApplied(true)
+
+    try {
+      console.log("🔍 Expand: Iniciando generateReport...");
+      console.log("📅 Expand: Rango de fechas:", { startDate: newStartDate, endDate: newEndDate });
+      console.log("👤 Expand: Empleado seleccionado:", selectedEmployee);
+      
+      const params = new URLSearchParams({
+        startDate: newStartDate,
+        endDate: newEndDate,
+        employeeId: selectedEmployee
+      });
+
+      console.log("🔎 Expand: Ejecutando consulta...");
+      const response = await fetch(`/api/reports/access-logs?${params}`);
+      const result = await response.json();
+
+      console.log("📊 Expand: Resultado consulta:", result);
+      console.log("📈 Expand: Cantidad de registros:", result.reports?.length || 0);
+
+      if (!response.ok) {
+        console.error("❌ Expand: Error en consulta:", result.error);
+        throw new Error(result.error || "Error al obtener reportes");
+      }
+
+      const reportData = result.reports.map((log: ReportAPIResponse) => ({
+        id: log.id,
+        name: log.name,
+        employeeId: log.employeeId,
+        timestamp: new Date(log.timestamp).toLocaleString("es-CO", {
+          dateStyle: "medium",
+          timeStyle: "medium",
+        }),
+        type: log.type,
+        auto_generated: log.auto_generated
+      }));
+
+      console.log("✅ Expand: Datos procesados:", reportData.length);
+      setReportData(reportData);
+    } catch (error) {
+      console.error("💥 Expand: Error generating report:", error);
+      alert("Error al generar el reporte. Por favor, intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function fetchEmployees() {
     try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("id, name, employee_id")
-        .order("name")
-
-      if (error) throw error
-      setEmployees(data || [])
+      console.log("🔍 Iniciando fetchEmployees...");
+      
+      const response = await fetch('/api/reports/employees');
+      const result = await response.json();
+      
+      console.log("📊 Resultado fetchEmployees:", result);
+      
+      if (!response.ok) {
+        console.error("❌ Error en fetchEmployees:", result.error);
+        throw new Error(result.error || "Error al obtener empleados");
+      }
+      
+      console.log("✅ Empleados cargados:", result.employees?.length || 0);
+      setEmployees(result.employees || []);
     } catch (error) {
-      console.error("Error fetching employees:", error)
+      console.error("💥 Error fetching employees:", error);
     }
   }
 
@@ -72,52 +135,47 @@ export default function Reports() {
     setFilterApplied(true)
 
     try {
-      let query = supabase
-        .from("access_logs")
-        .select(`
-          id,
-          timestamp,
-          type,
-          auto_generated,
-          employees (
-            name,
-            employee_id
-          )
-        `)
-        .gte("timestamp", `${startDate}T00:00:00`)
-        .lte("timestamp", `${endDate}T23:59:59`)
-        .order("timestamp", { ascending: false })
+      console.log("🔍 Iniciando generateReport...");
+      console.log("📅 Rango de fechas:", { startDate, endDate });
+      console.log("👤 Empleado seleccionado:", selectedEmployee);
+      
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+        employeeId: selectedEmployee
+      });
 
-      // Aplicar filtro de empleado si está seleccionado
-      if (selectedEmployee !== "all") {
-        query = query.eq("employee_id", selectedEmployee)
+      console.log("🔎 Ejecutando consulta...");
+      const response = await fetch(`/api/reports/access-logs?${params}`);
+      const result = await response.json();
+
+      console.log("📊 Resultado consulta:", result);
+      console.log("📈 Cantidad de registros:", result.reports?.length || 0);
+
+      if (!response.ok) {
+        console.error("❌ Error en consulta:", result.error);
+        throw new Error(result.error || "Error al obtener reportes");
       }
 
-      const { data: logs, error: logsError } = await query as unknown as { 
-        data: AccessLog[], 
-        error: PostgrestError | null 
-      }
-
-      if (logsError) throw logsError
-
-      const reportData = logs.map((log: AccessLog) => ({
+      const reportData = result.reports.map((log: ReportAPIResponse) => ({
         id: log.id,
-        name: log.employees?.name || "Unknown",
-        employeeId: log.employees?.employee_id || "Unknown",
+        name: log.name,
+        employeeId: log.employeeId,
         timestamp: new Date(log.timestamp).toLocaleString("es-CO", {
           dateStyle: "medium",
           timeStyle: "medium",
         }),
-        type: log.type === "check_in" ? "Entrada" : "Salida",
+        type: log.type,
         auto_generated: log.auto_generated
-      }))
+      }));
 
-      setReportData(reportData)
+      console.log("✅ Datos procesados:", reportData.length);
+      setReportData(reportData);
     } catch (error) {
-      console.error("Error generating report:", error)
-      alert("Error al generar el reporte. Por favor, intenta de nuevo.")
+      console.error("💥 Error generating report:", error);
+      alert("Error al generar el reporte. Por favor, intenta de nuevo.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -354,14 +412,7 @@ export default function Reports() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedEmployee("all");
-                    const end = new Date();
-                    const start = new Date();
-                    start.setMonth(start.getMonth() - 3); // Ampliar a 3 meses
-                    setEndDate(end.toISOString().split("T")[0]);
-                    setStartDate(start.toISOString().split("T")[0]);
-                  }}
+                  onClick={expandDateRange}
                   className="btn btn-outline"
                 >
                   Ampliar rango de búsqueda
