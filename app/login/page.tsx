@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
 import Link from "next/link"
 import Image from "next/image"
 import { useAuth } from "@/contexts/AuthContext"
 
-export default function Login() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState("")
@@ -202,7 +202,7 @@ export default function Login() {
                     required
                   />
                   {passwordMatchError && (
-                    <p className="mt-2 text-xs text-red-600">{passwordMatchError}</p>
+                    <p className="mt-1 text-sm text-red-600">{passwordMatchError}</p>
                   )}
                 </div>
 
@@ -231,41 +231,59 @@ export default function Login() {
                     value={organizationName}
                     onChange={(e) => setOrganizationName(e.target.value)}
                     className="input focus:shadow-blue-100"
-                    placeholder="Nombre de tu empresa o equipo"
+                    placeholder="Nombre de tu empresa"
                     required
                   />
                 </div>
               </>
             )}
 
-            <div className="pt-2">
+            <div>
               <button
                 type="submit"
+                disabled={loading || (isRegistering && passwordMatchError !== null)}
                 className="btn btn-primary w-full"
-                disabled={loading}
               >
                 {loading ? (
                   <div className="flex items-center justify-center">
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                     {isRegistering ? 'Creando cuenta...' : 'Iniciando sesión...'}
                   </div>
-                ) : isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'}
+                ) : (
+                  isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión'
+                )}
               </button>
             </div>
           </form>
 
           <div className="mt-6 text-center">
-            <button 
-              onClick={toggleMode} 
-              className="text-[#014F59] hover:text-[#00BF71] text-sm font-medium"
-            >
-              {isRegistering 
-                ? '¿Ya tienes una cuenta? Inicia sesión' 
-                : '¿No tienes una cuenta? Regístrate'}
-            </button>
+            <p className="text-sm text-gray-600">
+              {isRegistering ? '¿Ya tienes una cuenta?' : '¿No tienes una cuenta?'}
+              <button
+                type="button"
+                onClick={toggleMode}
+                className="ml-2 text-blue-600 hover:text-blue-700 hover:underline focus:outline-none"
+              >
+                {isRegistering ? 'Iniciar Sesión' : 'Crear Cuenta'}
+              </button>
+            </p>
           </div>
+        </div>
+
+        <div className="mt-8 text-center">
+          <Link href="/" className="text-blue-600 hover:text-blue-700 hover:underline">
+            ← Volver al inicio
+          </Link>
         </div>
       </div>
     </motion.div>
+  )
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div>Cargando...</div>}>
+      <LoginForm />
+    </Suspense>
   )
 }

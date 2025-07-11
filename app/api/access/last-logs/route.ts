@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     // Validar que el límite sea un número razonable
     const validLimit = Math.min(Math.max(1, limit), 20); // Entre 1 y 20
     
-    // Obtener los últimos registros de acceso
+    // Obtener los últimos registros de acceso con join manual
     const { data, error } = await supabaseAdmin
       .from("access_logs")
       .select(`
@@ -18,7 +18,8 @@ export async function GET(request: Request) {
         timestamp,
         type,
         auto_generated,
-        employees (
+        employee_id,
+        employees!inner (
           name,
           employee_id
         )
@@ -36,15 +37,15 @@ export async function GET(request: Request) {
     
     // Transformar los datos para que sean más fáciles de usar en el cliente
     const logs = data.map(log => {
-      // TypeScript seguro - employees es un array, tomar el primer elemento
-      const employee = (log.employees as { name: string; employee_id: string }[])?.[0] || null;
+      // Manejar employees como array y tomar el primer elemento
+      const employeeData = Array.isArray(log.employees) ? log.employees[0] : log.employees;
       
       return {
         id: log.id,
         timestamp: log.timestamp,
         type: log.type,
-        name: employee ? employee.name : "Desconocido",
-        employeeId: employee ? employee.employee_id : "N/A",
+        name: employeeData ? employeeData.name : "Desconocido",
+        employeeId: employeeData ? employeeData.employee_id : "N/A",
         auto_generated: log.auto_generated
       };
     });
