@@ -13,7 +13,7 @@ const nextConfig = {
   },
   // Asegurar que los archivos estáticos se sirvan correctamente
   trailingSlash: false,
-  // Optimizaciones para Vercel
+  // Optimizaciones para Vercel...
   swcMinify: true,
 }
 
