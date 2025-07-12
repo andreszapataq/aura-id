@@ -2,7 +2,7 @@
 const nextConfig = {
   images: {
     dangerouslyAllowSVG: true,
-    contentDispositionType: 'attachment',
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
     domains: ['localhost'],
     remotePatterns: [
       {
@@ -11,6 +11,10 @@ const nextConfig = {
       },
     ],
   },
+  // Asegurar que los archivos estáticos se sirvan correctamente
+  trailingSlash: false,
+  // Optimizaciones para Vercel
+  swcMinify: true,
 }
 
-module.exports = nextConfig
+export default nextConfig
