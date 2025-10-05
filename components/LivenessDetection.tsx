@@ -4,21 +4,22 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import awsconfig from '@/aws-exports';
 import { Amplify } from 'aws-amplify';
 import { FaceLivenessDetector } from '@aws-amplify/ui-react-liveness';
+import { logger } from '@/lib/logger';
 import '@aws-amplify/ui-react/styles.css';
 import '@aws-amplify/ui-react-liveness/styles.css';
 
 // Configurar Amplify y verificar configuración
 try {
-  console.log('Configurando AWS Amplify con:', {
+  logger.log('Configurando AWS Amplify con:', {
     region: awsconfig.aws_project_region,
     identityPoolId: awsconfig.aws_cognito_identity_pool_id,
     hasIdentityPool: !!awsconfig.aws_cognito_identity_pool_id
   });
   
   Amplify.configure(awsconfig);
-  console.log('AWS Amplify configurado exitosamente');
+  logger.log('AWS Amplify configurado exitosamente');
 } catch (error) {
-  console.error('Error al configurar AWS Amplify:', error);
+  logger.error('Error al configurar AWS Amplify:', error);
 }
 
 interface LivenessDetectionProps {
@@ -55,7 +56,7 @@ export default function LivenessDetection({
         return;
       }
       
-      console.log('Intentando crear sesión de liveness...');
+      logger.log('Intentando crear sesión de liveness...');
       
       const response = await fetch('/api/liveness/create-session', {
         method: 'POST',
@@ -64,17 +65,16 @@ export default function LivenessDetection({
         }
       });
       
-      // Log the response status for debugging
-      console.log('Estado de respuesta:', response.status);
+      logger.log('Estado de respuesta:', response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error en la respuesta de la API:', errorText);
+        logger.error('Error en la respuesta de la API:', errorText);
         throw new Error(`Error en la respuesta: ${response.status} ${errorText}`);
       }
       
       const data = await response.json();
-      console.log('Sesión creada con éxito:', data.sessionId);
+      logger.log('Sesión creada con éxito:', data.sessionId);
       
       if (!data.sessionId) {
         throw new Error('No se recibió ID de sesión en la respuesta');
@@ -82,7 +82,7 @@ export default function LivenessDetection({
       
       setSessionId(data.sessionId);
     } catch (error) {
-      console.error('Error detallado al crear la sesión:', error);
+      logger.error('Error detallado al crear la sesión:', error);
       
       // Provide more specific error message based on the error
       let errorMessage = 'Error al crear la sesión de verificación';
@@ -97,7 +97,7 @@ export default function LivenessDetection({
       // Automatically retry after a delay for certain errors
       if (currentRetryCount < MAX_RETRIES) {
         const nextRetryCount = currentRetryCount + 1;
-        console.log(`Reintentando en 5 segundos (intento ${nextRetryCount} de ${MAX_RETRIES})...`);
+        logger.log(`Reintentando en 5 segundos (intento ${nextRetryCount} de ${MAX_RETRIES})...`);
         setTimeout(() => {
           setIsLoading(true);
           createNewSession(nextRetryCount);
@@ -121,7 +121,7 @@ export default function LivenessDetection({
   // Función para capturar imagen de la webcam
   const captureImageFromWebcam = useCallback(async (): Promise<string | null> => {
     try {
-      console.log('Intentando capturar imagen de la webcam...');
+      logger.log('Intentando capturar imagen de la webcam...');
       
       // Crear elementos temporales si no existen
       const video = videoRef.current || document.createElement('video');
@@ -186,20 +186,20 @@ export default function LivenessDetection({
         document.body.removeChild(canvas);
       }
       
-      console.log('Imagen capturada exitosamente:', imageData.substring(0, 50) + '...');
+      logger.log('Imagen capturada exitosamente:', imageData.substring(0, 50) + '...');
       return imageData;
     } catch (error) {
-      console.error('Error al capturar imagen de la webcam:', error);
+      logger.error('Error al capturar imagen de la webcam:', error);
       return null;
     }
   }, []);
 
   const handleAnalysisComplete = async (result: { sessionId: string }) => {
     try {
-      console.log('Análisis completado con sessionId:', result.sessionId);
+      logger.log('Análisis completado con sessionId:', result.sessionId);
       if (!result.sessionId) {
         const errorMsg = 'No se recibió ID de sesión';
-        console.error(errorMsg);
+        logger.error(errorMsg);
         setError(errorMsg);
         throw new Error(errorMsg);
       }
@@ -218,7 +218,7 @@ export default function LivenessDetection({
         });
       } catch (fetchError) {
         const errorMsg = 'Error de red al evaluar la sesión';
-        console.error(errorMsg, fetchError);
+        logger.error(errorMsg, fetchError);
         setError(`${errorMsg}. Por favor, verifique su conexión a internet.`);
         throw new Error(errorMsg);
       }
@@ -228,10 +228,10 @@ export default function LivenessDetection({
         try {
           const errorData = await response.json();
           errorText = errorData.error || `Error ${response.status}`;
-          console.error('Error en la respuesta de la API:', errorData);
+          logger.error('Error en la respuesta de la API:', errorData);
         } catch {
           errorText = await response.text();
-          console.error('Error en la respuesta de la API (texto plano):', errorText);
+          logger.error('Error en la respuesta de la API (texto plano):', errorText);
         }
         
         const errorMsg = `Error en la respuesta: ${response.status} - ${errorText}`;
@@ -242,17 +242,17 @@ export default function LivenessDetection({
       let data;
       try {
         data = await response.json();
-        console.log('Datos de evaluación recibidos:', data);
+        logger.log('Datos de evaluación recibidos:', data);
       } catch (jsonError) {
         const errorMsg = 'Error al procesar la respuesta del servidor';
-        console.error(errorMsg, jsonError);
+        logger.error(errorMsg, jsonError);
         setError(`${errorMsg}. La respuesta no es un JSON válido.`);
         throw new Error(errorMsg);
       }
       
       // Verificar si los datos están vacíos o son inválidos
       if (!data || Object.keys(data).length === 0) {
-        console.error('Datos de evaluación vacíos o inválidos');
+        logger.error('Datos de evaluación vacíos o inválidos');
         setError('No se recibieron datos de evaluación del servidor. Por favor, intente nuevamente.');
         throw new Error('Datos de evaluación inválidos: ' + JSON.stringify(data));
       }
@@ -265,7 +265,7 @@ export default function LivenessDetection({
       }
       
       if (!data.ok) {
-        console.error('Datos de evaluación inválidos:', data);
+        logger.error('Datos de evaluación inválidos:', data);
         const errorMsg = data.error || 'La verificación de presencia falló';
         const detailsMsg = data.details ? ` (${JSON.stringify(data.details)})` : '';
         setError(`${errorMsg}${detailsMsg}`);
@@ -276,7 +276,7 @@ export default function LivenessDetection({
       
       // Verificar si el servidor indica que debemos capturar la imagen en el cliente
       if (data.captureImageInClient || (!data.referenceImage?.Bytes)) {
-        console.log('El servidor indica que debemos capturar la imagen en el cliente o no hay imagen de referencia');
+        logger.log('El servidor indica que debemos capturar la imagen en el cliente o no hay imagen de referencia');
         
         // Cambiar el estado a éxito para mostrar el mensaje de mantener posición
         setStatus('success');
@@ -287,36 +287,36 @@ export default function LivenessDetection({
         const capturedImage = await captureImageFromWebcam();
         
         if (!capturedImage) {
-          console.error('No se pudo capturar la imagen de la webcam');
+          logger.error('No se pudo capturar la imagen de la webcam');
           setError('No se pudo capturar la imagen de la webcam. Por favor, intente nuevamente.');
           throw new Error('No se pudo capturar la imagen de la webcam');
         }
         
-        console.log('Usando imagen capturada localmente');
+        logger.log('Usando imagen capturada localmente');
         referenceImage = capturedImage;
       }
       // Verificar si tenemos una imagen de referencia válida de AWS
       else if (data.referenceImage && data.referenceImage.Bytes) {
-        console.log('Usando imagen de referencia de AWS Rekognition');
-        console.log('Información de la imagen:', data.imageInfo || 'No disponible');
+        logger.log('Usando imagen de referencia de AWS Rekognition');
+        logger.log('Información de la imagen:', data.imageInfo || 'No disponible');
         referenceImage = `data:image/jpeg;base64,${data.referenceImage.Bytes}`;
       } else {
-        console.warn('No se recibió imagen de referencia válida de AWS');
+        logger.warn('No se recibió imagen de referencia válida de AWS');
         setError('No se recibió imagen de referencia. Por favor, intente nuevamente.');
         throw new Error('No se recibió imagen de referencia válida');
       }
       
       // Verificar que la imagen no sea undefined o vacía
       if (!referenceImage || referenceImage === 'data:image/jpeg;base64,undefined' || referenceImage === 'data:image/jpeg;base64,') {
-        console.error('Imagen de referencia inválida:', referenceImage);
+        logger.error('Imagen de referencia inválida:', referenceImage);
         setError('La imagen de referencia es inválida. Por favor, intente nuevamente.');
         throw new Error('Imagen de referencia inválida');
       }
       
-      console.log('Verificación exitosa con imagen válida');
+      logger.log('Verificación exitosa con imagen válida');
       onSuccess(referenceImage, result.sessionId);
     } catch (error) {
-      console.error('Error en handleAnalysisComplete:', error);
+      logger.error('Error en handleAnalysisComplete:', error);
       onError(error instanceof Error ? error : new Error('Error desconocido'));
     }
   };
@@ -394,7 +394,7 @@ export default function LivenessDetection({
         sessionId={sessionId}
         region={'us-east-1'}
         onAnalysisComplete={() => {
-          console.log('onAnalysisComplete llamado con sessionId:', sessionId);
+          logger.log('onAnalysisComplete llamado con sessionId:', sessionId);
           return Promise.resolve(handleAnalysisComplete({ sessionId: sessionId || '' }));
         }}
         onError={(error) => {
@@ -403,9 +403,9 @@ export default function LivenessDetection({
           let shouldRetry = false;
           
           try {
-            console.log('Error completo recibido:', error);
-            console.log('Tipo de error:', typeof error);
-            console.log('Keys del error:', error ? Object.keys(error) : []);
+            logger.log('Error completo recibido:', error);
+            logger.log('Tipo de error:', typeof error);
+            logger.log('Keys del error:', error ? Object.keys(error) : []);
             
             if (error) {
               const errorStr = String(error);
@@ -414,20 +414,20 @@ export default function LivenessDetection({
               // Manejo específico para errores comunes
               if (errorStr.includes('credentials') || errorStr.includes('CredentialsError')) {
                 errorMessage = 'Error de credenciales de AWS. Verifique la configuración del Identity Pool.';
-                console.error('❌ Error de credenciales AWS:', error);
+                logger.error('❌ Error de credenciales AWS:', error);
               }
               else if (errorStr.includes('network') || errorStr.includes('NetworkError')) {
                 errorMessage = 'Error de conexión de red. Verifique su conexión a internet.';
                 shouldRetry = true;
               }
               else if ('state' in errorObj && errorObj.state === 'SERVER_ERROR') {
-                console.log('Detectado error de servidor AWS:', error);
+                logger.log('Detectado error de servidor AWS:', error);
                 errorMessage = 'Error en el servidor de verificación AWS.';
                 shouldRetry = true;
               }
               else if (errorStr.includes('region') || errorStr.includes('identity pool')) {
                 errorMessage = 'Error de configuración de AWS. Verifique las variables de entorno.';
-                console.error('❌ Error de configuración AWS:', error);
+                logger.error('❌ Error de configuración AWS:', error);
               }
               // Intentar convertir el error a string JSON si es posible
               else if (typeof error === 'object') {
@@ -437,11 +437,11 @@ export default function LivenessDetection({
               }
             }
           } catch (parseError) {
-            console.error('Error al procesar el error:', parseError);
+            logger.error('Error al procesar el error:', parseError);
             errorMessage = 'Error no serializable';
           }
           
-          console.error('🔍 Error detallado en la verificación de presencia:', {
+          logger.error('🔍 Error detallado en la verificación de presencia:', {
             error,
             errorType: typeof error,
             errorKeys: error ? Object.keys(error) : [],
@@ -451,7 +451,7 @@ export default function LivenessDetection({
           
           // Decidir si reintentar automáticamente
           if (shouldRetry && (errorMessage === '{}' || errorMessage.includes('SERVER_ERROR') || errorMessage.includes('network'))) {
-            console.log('⏳ Reintentando automáticamente...');
+            logger.log('⏳ Reintentando automáticamente...');
             setError('Reintentando verificación automáticamente...');
             
             setTimeout(() => {
@@ -465,7 +465,7 @@ export default function LivenessDetection({
           return Promise.resolve();
         }}
         onUserCancel={() => {
-          console.log('Usuario canceló la verificación');
+          logger.log('Usuario canceló la verificación');
           onCancel();
           return Promise.resolve();
         }}

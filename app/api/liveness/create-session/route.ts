@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { RekognitionClient, CreateFaceLivenessSessionCommand } from "@aws-sdk/client-rekognition";
+import { logger } from '@/lib/logger';
 
 const rekognition = new RekognitionClient({
   region: process.env.AWS_REGION,
@@ -11,7 +12,7 @@ const rekognition = new RekognitionClient({
 
 export async function POST() {
   try {
-    console.log("Creating liveness session with config:", {
+    logger.log("Creating liveness session with config:", {
       region: process.env.AWS_REGION,
       hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
       hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY
@@ -37,7 +38,7 @@ export async function POST() {
     });
     
     const response = await rekognition.send(command);
-    console.log("Liveness session created:", response.SessionId);
+    logger.log("Liveness session created:", response.SessionId);
     
     // Generar URL para verificación por correo
     const baseUrl = 'https://liveness.rekognition.amazonaws.com/';
@@ -53,7 +54,7 @@ export async function POST() {
       sessionUrl: sessionUrl
     });
   } catch (error) {
-    console.error("Error creating liveness session:", error);
+    logger.error("Error creating liveness session:", error);
     
     let errorMessage = "Error desconocido";
     let errorDetails = {};

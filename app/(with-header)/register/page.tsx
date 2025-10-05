@@ -4,6 +4,7 @@ import { useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
+import { logger } from "@/lib/logger"
 
 import LivenessDetection from "@/components/LivenessDetection"
 
@@ -23,19 +24,19 @@ export default function Register() {
 
 
   const handleLivenessSuccess = (referenceImage: string, sessionId: string) => {
-    console.log("Verificación facial exitosa", { sessionId });
+    logger.log("Verificación facial exitosa", { sessionId });
     setLivenessStatus(true)
     setImage(referenceImage)
   }
 
   const handleLivenessError = (error: Error) => {
-    console.error("Error en verificación facial:", error);
+    logger.error("Error en verificación facial:", error);
     setErrorMessage(error.message || "Error en la verificación facial");
     setLivenessStatus(false);
   }
 
   const handleLivenessCancel = () => {
-    console.log("Verificación facial cancelada");
+    logger.log("Verificación facial cancelada");
     setLivenessStatus(false);
   }
 
@@ -76,10 +77,10 @@ export default function Register() {
       if (!response.ok || !data.ok) {
         setErrorMessage(data.error || data.message || "Error al registrar empleado")
       } else {
-        console.log("API Response Data:", data);
+        logger.log("API Response Data:", data);
         const employeeData = data.employee;
         const registeredAtFromApi = employeeData?.registered_at;
-        console.log("Received registered_at:", registeredAtFromApi);
+        logger.log("Received registered_at:", registeredAtFromApi);
 
         setRegisteredEmployee({
           employee_id: employeeData?.employee_id || employeeId,
@@ -88,7 +89,7 @@ export default function Register() {
         })
       }
     } catch (error) {
-      console.error("Error inesperado al registrar:", error)
+      logger.error("Error inesperado al registrar:", error)
       setErrorMessage("Ha ocurrido un error inesperado. Por favor, inténtelo nuevamente.")
     } finally {
       setIsLoading(false)
@@ -109,7 +110,7 @@ export default function Register() {
           hour: '2-digit', minute: '2-digit' 
       }); 
     } catch (e) {
-      console.error("Error formateando fecha:", e);
+      logger.error("Error formateando fecha:", e);
       return 'Fecha inválida';
     }
   }

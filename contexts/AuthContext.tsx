@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Session, User, AuthError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { logger } from '@/lib/logger'
 
 // Definir el tipo para el contexto
 type AuthContextType = {
@@ -70,13 +71,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password
       });
       if (error) {
-        console.error('Error durante el inicio de sesión:', error);
+        logger.error('Error durante el inicio de sesión:', error);
         return { error };
       }
       // El listener onAuthStateChange actualizará el estado
       return { error: null };
     } catch (error) {
-      console.error('Excepción durante el inicio de sesión:', error);
+      logger.error('Excepción durante el inicio de sesión:', error);
       return { error: error instanceof AuthError ? error : new AuthError('Error desconocido') };
     } finally {
       setLoading(false);
@@ -95,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // 2. Manejar errores de la invocación o errores devueltos por la función
       if (functionError) {
-        console.error('Error al invocar la Edge Function:', functionError);
+        logger.error('Error al invocar la Edge Function:', functionError);
         // Intenta obtener un mensaje de error más específico si la función lo envió en 'data.error'
         const errorMessage = data?.error || functionError.message || 'Ocurrió un error durante el registro.';
         // Devuelve un objeto compatible con tu tipo de retorno esperado
@@ -117,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     } catch (error) {
       // Capturar errores inesperados (ej. problemas de red al llamar la función)
-      console.error('Error inesperado durante el proceso de signUp:', error);
+      logger.error('Error inesperado durante el proceso de signUp:', error);
       return { error: new AuthError(error instanceof Error ? error.message : 'Error desconocido en el cliente'), user: null };
     } finally {
        setLoading(false); // Quitar el estado de carga
@@ -130,13 +131,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
-         console.error('Error durante el cierre de sesión:', error);
+         logger.error('Error durante el cierre de sesión:', error);
       } else {
           // El listener onAuthStateChange actualizará session y user a null
           router.push('/login'); // Redirigir al login después de cerrar sesión
       }
     } catch (error) {
-      console.error('Excepción durante el cierre de sesión:', error);
+      logger.error('Excepción durante el cierre de sesión:', error);
     } finally {
        setLoading(false);
     }

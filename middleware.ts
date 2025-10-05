@@ -36,7 +36,6 @@ export async function middleware(request: NextRequest) {
     const isPublicPath = publicPaths.includes(path);
 
     // Si es una ruta pública (login) y el usuario está logueado, redirigir a la home
-    // (Se podría refinar para solo aplicar a /login)
     if (isPublicPath && path === '/login' && session) { 
       return NextResponse.redirect(new URL('/', request.url))
     }
@@ -47,15 +46,16 @@ export async function middleware(request: NextRequest) {
       // Mantener el parámetro redirect si ya existe, o usar el path actual
       const redirectParam = request.nextUrl.searchParams.get('redirect');
       loginUrl.searchParams.set('redirect', redirectParam ? redirectParam : encodeURIComponent(path))
-      console.log(`[Middleware] No session on protected route (${path}). Redirecting to login with redirect=${loginUrl.searchParams.get('redirect')}`)
       return NextResponse.redirect(loginUrl)
     }
     
     // Si es pública y no logueado, o si es protegida y logueado, deja pasar
-    console.log(`[Middleware] Allowing access to ${path}. Session: ${session ? 'present' : 'null'}, Public: ${isPublicPath}`)
     return res
   } catch (error) {
-    console.error('[Middleware] Error:', error)
+    // Solo logear errores en desarrollo
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[Middleware] Error:', error)
+    }
     // En caso de error, intenta redirigir a login solo si no es ya una ruta pública
     if (!publicPaths.includes(request.nextUrl.pathname)) {
       return NextResponse.redirect(new URL('/login', request.url))

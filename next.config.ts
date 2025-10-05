@@ -3,18 +3,24 @@ const nextConfig = {
   images: {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
-    domains: ['localhost'],
     remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '',
+        pathname: '/**',
+      },
       {
         protocol: 'https',
         hostname: '*',
+        port: '',
+        pathname: '/**',
       },
     ],
   },
   // Asegurar que los archivos estáticos se sirvan correctamente
   trailingSlash: false,
-  // Optimizaciones para Vercel...
-  swcMinify: true,
+  // swcMinify ya es el comportamiento por defecto en Next.js 15, no es necesario especificarlo
 }
 
 export default nextConfig
