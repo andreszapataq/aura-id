@@ -3,7 +3,10 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 // Lista de rutas públicas que no requieren autenticación
-const publicPaths = ['/login', '/auth/callback', '/auth/handle-session'];
+const publicPaths = ['/login', '/auth/callback', '/auth/handle-session', '/kiosk-login'];
+
+// Rutas que solo pueden acceder administradores
+const adminOnlyPaths = ['/register', '/reports', '/admin'];
 
 export async function middleware(request: NextRequest) {
   try {
@@ -35,8 +38,19 @@ export async function middleware(request: NextRequest) {
     // Comprobar si la ruta actual es una de las públicas
     const isPublicPath = publicPaths.includes(path);
 
-    // Si es una ruta pública (login) y el usuario está logueado, redirigir a la home
+    // Si es una ruta pública (login) y el usuario está logueado, redirigir según el rol
     if (isPublicPath && path === '/login' && session) { 
+      // Obtener perfil del usuario
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role, is_kiosk')
+        .eq('id', session.user.id)
+        .single();
+      
+      // Redirigir kiosco a /access, admin a /
+      if (profile?.is_kiosk) {
+        return NextResponse.redirect(new URL('/access', request.url))
+      }
       return NextResponse.redirect(new URL('/', request.url))
     }
     
@@ -49,7 +63,34 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl)
     }
     
-    // Si es pública y no logueado, o si es protegida y logueado, deja pasar
+    // Si hay sesión, verificar permisos por rol
+    if (session) {
+      // Obtener perfil del usuario
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role, is_kiosk, lock_session')
+        .eq('id', session.user.id)
+        .single();
+      
+      // Si es usuario kiosk, SOLO permitir /access
+      if (profile?.is_kiosk && path !== '/access') {
+        console.log('[Middleware] Usuario kiosco intentando acceder a:', path, '- Redirigiendo a /access');
+        return NextResponse.redirect(new URL('/access', request.url))
+      }
+      
+      // Verificar rutas exclusivas de admin
+      const isAdminOnlyPath = adminOnlyPaths.some(adminPath => path.startsWith(adminPath));
+      if (isAdminOnlyPath && profile?.role !== 'admin') {
+        console.log('[Middleware] Usuario sin permisos de admin intentando acceder a:', path);
+        return NextResponse.redirect(new URL('/', request.url))
+      }
+      
+      // Agregar headers con información del rol (para uso en componentes)
+      res.headers.set('x-user-role', profile?.role || 'user');
+      res.headers.set('x-is-kiosk', profile?.is_kiosk ? 'true' : 'false');
+    }
+    
+    // Si es pública y no logueado, o si es protegida y logueado con permisos, deja pasar
     return res
   } catch (error) {
     // Solo logear errores en desarrollo

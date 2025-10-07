@@ -2,6 +2,9 @@
 
 import Link from "next/link"
 import { motion } from 'framer-motion'
+import { useAuth } from '@/contexts/AuthContext'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
 // Iconos estilizados para cada sección
 const RegisterIcon = () => (
@@ -38,6 +41,44 @@ const item = {
 }
 
 export default function Home() {
+  const { isKiosk, isAdmin } = useAuth()
+  const router = useRouter()
+
+  // Redirigir usuarios kiosco a /access automáticamente
+  useEffect(() => {
+    if (isKiosk) {
+      router.push('/access')
+    }
+  }, [isKiosk, router])
+
+  // Filtrar secciones según rol
+  const sections = [
+    { 
+      name: 'Registro', 
+      href: '/register', 
+      description: 'Registra nuevos empleados en el sistema mediante reconocimiento facial',
+      icon: RegisterIcon,
+      visible: isAdmin,
+      color: 'green'
+    },
+    { 
+      name: 'Control de Acceso', 
+      href: '/access', 
+      description: 'Registra entradas y salidas de empleados de manera rápida y segura',
+      icon: AccessIcon,
+      visible: true, // Todos pueden ver esto
+      color: 'blue'
+    },
+    { 
+      name: 'Reportes', 
+      href: '/reports', 
+      description: 'Genera informes detallados de acceso y visualiza estadísticas',
+      icon: ReportsIcon,
+      visible: isAdmin,
+      color: 'purple'
+    },
+  ].filter(section => section.visible)
+
   return (
     <main className="container mx-auto px-4 py-12 md:py-20">
       <motion.div 
@@ -58,49 +99,23 @@ export default function Home() {
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid gap-6 sm:grid-cols-1 md:grid-cols-3 max-w-6xl mx-auto"
+        className={`grid gap-6 max-w-6xl mx-auto ${sections.length === 3 ? 'sm:grid-cols-1 md:grid-cols-3' : sections.length === 2 ? 'sm:grid-cols-1 md:grid-cols-2' : 'sm:grid-cols-1'}`}
       >
-        <motion.div variants={item}>
-          <Link href="/register" className="block group h-full">
-            <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-[#00DD8B] transition-all duration-300">
-              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-[#00BF71] group-hover:bg-white transition-colors duration-300">
-                <RegisterIcon />
+        {sections.map((section) => (
+          <motion.div key={section.name} variants={item}>
+            <Link href={section.href} className="block group h-full">
+              <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-[#00DD8B] transition-all duration-300">
+                <div className="w-20 h-20 flex items-center justify-center rounded-full bg-[#00BF71] group-hover:bg-white transition-colors duration-300">
+                  <section.icon />
+                </div>
+                <h2 className="text-2xl font-semibold mt-6 mb-3 text-gray-900 text-heading">{section.name}</h2>
+                <p className="text-gray-700 text-center max-w-xs text-body">
+                  {section.description}
+                </p>
               </div>
-              <h2 className="text-2xl font-semibold mt-6 mb-3 text-gray-900 text-heading">Registro</h2>
-              <p className="text-gray-700 text-center max-w-xs text-body">
-                Registra nuevos empleados en el sistema mediante reconocimiento facial
-              </p>
-            </div>
-          </Link>
-        </motion.div>
-
-        <motion.div variants={item}>
-          <Link href="/access" className="block group h-full">
-            <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-[#00DD8B] transition-all duration-300">
-              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-[#00BF71] group-hover:bg-white transition-colors duration-300">
-                <AccessIcon />
-              </div>
-              <h2 className="text-2xl font-semibold mt-6 mb-3 text-gray-900 text-heading">Control de Acceso</h2>
-              <p className="text-gray-700 text-center max-w-xs text-body">
-                Registra entradas y salidas de empleados de manera rápida y segura
-              </p>
-            </div>
-          </Link>
-        </motion.div>
-
-        <motion.div variants={item}>
-          <Link href="/reports" className="block group h-full">
-            <div className="card card-hover h-full flex flex-col items-center py-12 group-hover:bg-[#00DD8B] transition-all duration-300">
-              <div className="w-20 h-20 flex items-center justify-center rounded-full bg-[#00BF71] group-hover:bg-white transition-colors duration-300">
-                <ReportsIcon />
-              </div>
-              <h2 className="text-2xl font-semibold mt-6 mb-3 text-gray-900 text-heading">Reportes</h2>
-              <p className="text-gray-700 text-center max-w-xs text-body">
-                Genera informes detallados de acceso y visualiza estadísticas
-              </p>
-            </div>
-          </Link>
-        </motion.div>
+            </Link>
+          </motion.div>
+        ))}
       </motion.div>
     </main>
   )

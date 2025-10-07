@@ -6,24 +6,49 @@ import { Session, User, AuthError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 
+// Definir tipos de roles
+export type UserRole = 'user' | 'admin' | 'kiosk'
+
+// Definir tipo de perfil de usuario
+export type UserProfile = {
+  id: string
+  email: string
+  role: UserRole
+  is_kiosk: boolean
+  lock_session: boolean
+  organization_id: string
+  full_name: string | null
+  created_at: string
+}
+
 // Definir el tipo para el contexto
 type AuthContextType = {
   session: Session | null
   user: User | null
+  userProfile: UserProfile | null
   loading: boolean
+  isAdmin: boolean
+  isKiosk: boolean
+  canLogout: boolean
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
   signUp: (email: string, password: string, fullName: string, organizationName: string) => Promise<{ error: AuthError | null, user: User | null }>
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 // Crear contexto con valores predeterminados
 const AuthContext = createContext<AuthContextType>({
   session: null,
   user: null,
+  userProfile: null,
   loading: true,
+  isAdmin: false,
+  isKiosk: false,
+  canLogout: true,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null, user: null }),
-  signOut: async () => {}
+  signOut: async () => {},
+  refreshProfile: async () => {}
 })
 
 // Hook para usar el contexto de autenticación
@@ -33,8 +58,50 @@ export const useAuth = () => useContext(AuthContext)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
+  const [isAdmin, setIsAdmin] = useState<boolean>(false)
+  const [isKiosk, setIsKiosk] = useState<boolean>(false)
+  const [canLogout, setCanLogout] = useState<boolean>(true)
   const router = useRouter()
+
+  // Función para cargar el perfil del usuario
+  const loadUserProfile = async (userId: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        logger.error('Error al cargar perfil de usuario:', error);
+        return;
+      }
+
+      if (profile) {
+        setUserProfile(profile as UserProfile);
+        setIsAdmin(profile.role === 'admin');
+        setIsKiosk(profile.is_kiosk === true);
+        setCanLogout(!profile.lock_session);
+        
+        logger.log('Perfil de usuario cargado:', {
+          role: profile.role,
+          isKiosk: profile.is_kiosk,
+          canLogout: !profile.lock_session
+        });
+      }
+    } catch (error) {
+      logger.error('Error inesperado al cargar perfil:', error);
+    }
+  };
+
+  // Función para refrescar el perfil
+  const refreshProfile = async () => {
+    if (user?.id) {
+      await loadUserProfile(user.id);
+    }
+  };
 
   // Cargar sesión de usuario al inicio y suscribirse a cambios
   useEffect(() => {
@@ -43,12 +110,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
+      
+      // Cargar perfil si hay usuario
+      if (session?.user) {
+        await loadUserProfile(session.user.id);
+      }
+      
       setLoading(false); // Termina la carga inicial
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (_event, session) => {
+        async (_event, session) => {
           setSession(session);
           setUser(session?.user ?? null);
+          
+          // Cargar perfil si hay usuario
+          if (session?.user) {
+            await loadUserProfile(session.user.id);
+          } else {
+            // Limpiar perfil si no hay usuario
+            setUserProfile(null);
+            setIsAdmin(false);
+            setIsKiosk(false);
+            setCanLogout(true);
+          }
+          
           setLoading(false); // Actualiza estado de carga en cambios
         }
       );
@@ -127,12 +212,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Función para cerrar sesión
   const signOut = async () => {
+    // Verificar si el usuario puede cerrar sesión
+    if (!canLogout) {
+      logger.warn('Intento de cerrar sesión bloqueado para usuario kiosco');
+      return;
+    }
+
     setLoading(true);
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
          logger.error('Error durante el cierre de sesión:', error);
       } else {
+          // Limpiar estado local
+          setUserProfile(null);
+          setIsAdmin(false);
+          setIsKiosk(false);
+          setCanLogout(true);
+          
           // El listener onAuthStateChange actualizará session y user a null
           router.push('/login'); // Redirigir al login después de cerrar sesión
       }
@@ -147,10 +244,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = {
     session,
     user,
+    userProfile,
     loading,
+    isAdmin,
+    isKiosk,
+    canLogout,
     signIn,
     signUp, // Esta es la nueva función signUp que llama a la Edge Function
-    signOut
+    signOut,
+    refreshProfile
   };
 
   // Renderizar el proveedor con el valor y los componentes hijos

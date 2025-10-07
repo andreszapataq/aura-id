@@ -11,14 +11,26 @@ export default function Header() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const { user, signOut } = useAuth()
+  const { user, userProfile, isAdmin, isKiosk, canLogout, signOut } = useAuth()
   
-  const navigationItems = [
-    { name: 'Inicio', href: '/' },
-    { name: 'Registrar', href: '/register' },
-    { name: 'Control de Acceso', href: '/access' },
-    { name: 'Reportes', href: '/reports' },
+  // NO renderizar header para usuarios kiosco
+  if (isKiosk) {
+    return null
+  }
+  
+  // Filtrar navegación según rol del usuario
+  const allNavigationItems = [
+    { name: 'Inicio', href: '/', roles: ['admin', 'user'] },
+    { name: 'Registrar', href: '/register', roles: ['admin'] },
+    { name: 'Control de Acceso', href: '/access', roles: ['admin', 'user'] },
+    { name: 'Reportes', href: '/reports', roles: ['admin'] },
+    { name: 'Kioscos', href: '/admin/kiosks', roles: ['admin'] },
   ]
+  
+  // Mostrar solo las opciones permitidas para el rol actual
+  const navigationItems = allNavigationItems.filter(item => 
+    item.roles.includes(userProfile?.role || 'user')
+  )
 
   // Verifica si la ruta actual coincide con el enlace de navegación
   const isActive = (path: string) => {
@@ -71,19 +83,22 @@ export default function Header() {
             </nav>
           </div>
           
-          {/* Botón de cerrar sesión */}
+          {/* Botón de cerrar sesión - Solo si canLogout es true */}
           {user && (
             <div className="hidden sm:flex sm:items-center">
               <div className="mr-4 text-sm text-gray-600">
-                {user.email}
+                {userProfile?.full_name || user.email}
+                {isAdmin && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Admin</span>}
               </div>
-              <button
-                onClick={handleLogout}
-                className="btn btn-sm btn-outline"
-                disabled={isLoggingOut}
-              >
-                {isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}
-              </button>
+              {canLogout && (
+                <button
+                  onClick={handleLogout}
+                  className="btn btn-sm btn-outline"
+                  disabled={isLoggingOut}
+                >
+                  {isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}
+                </button>
+              )}
             </div>
           )}
           
@@ -140,15 +155,18 @@ export default function Header() {
             {user && (
               <>
                 <div className="pl-3 pr-4 py-2 text-sm text-gray-600">
-                  {user.email}
+                  {userProfile?.full_name || user.email}
+                  {isAdmin && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Admin</span>}
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="w-full text-left block pl-3 pr-4 py-2 border-l-4 border-transparent text-gray-500 hover:bg-[#00DD8B]/5 hover:border-[#00BF71] hover:text-[#014F59] text-base font-medium"
-                  disabled={isLoggingOut}
-                >
-                  {isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}
-                </button>
+                {canLogout && (
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left block pl-3 pr-4 py-2 border-l-4 border-transparent text-gray-500 hover:bg-[#00DD8B]/5 hover:border-[#00BF71] hover:text-[#014F59] text-base font-medium"
+                    disabled={isLoggingOut}
+                  >
+                    {isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}
+                  </button>
+                )}
               </>
             )}
           </div>
