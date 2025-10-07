@@ -15,6 +15,7 @@ function generateSecurePassword(length: number = 16): string {
   return password;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function POST(_request: Request) {
   try {
     // Crear cliente de Supabase con las cookies del servidor
