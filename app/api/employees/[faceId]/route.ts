@@ -2,10 +2,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
 
 export async function GET(
-  request: Request,
-  { params }: { params: { faceId: string } }
+  _request: Request,
+  props: { params: Promise<{ faceId: string }> }
 ) {
   try {
+    const params = await props.params;
     const faceId = params.faceId;
 
     if (!faceId) {
