@@ -38,9 +38,12 @@ export default function LivenessDetection({
   const [error, setError] = useState<string | null>(null);
   const [sessionUrl, setSessionUrl] = useState<string | null>(null);
   const MAX_RETRIES = 3;
+  const MAX_CONSECUTIVE_TIMEOUTS = 2; // Después de 2 timeouts consecutivos, entrar en modo espera
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'success' | 'error' | null>(null);
+  const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0);
+  const [isWaitingMode, setIsWaitingMode] = useState(false);
 
   // Función para crear una nueva sesión
   const createNewSession = useCallback(async (currentRetryCount = 0) => {
@@ -111,6 +114,7 @@ export default function LivenessDetection({
   // Crear sesión al montar el componente (solo una vez)
   useEffect(() => {
     createNewSession(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Sin dependencias para evitar bucle infinito
 
   // Función wrapper para handlers de botón
@@ -314,6 +318,7 @@ export default function LivenessDetection({
       }
       
       logger.log('Verificación exitosa con imagen válida');
+      setConsecutiveTimeouts(0); // Resetear contador en éxito
       onSuccess(referenceImage, result.sessionId);
     } catch (error) {
       logger.error('Error en handleAnalysisComplete:', error);
@@ -384,6 +389,35 @@ export default function LivenessDetection({
     );
   }
 
+  // Renderizar pantalla de modo espera
+  if (isWaitingMode) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl min-h-[400px]">
+        <div className="bg-white rounded-full p-6 mb-6 shadow-lg">
+          <svg className="w-16 h-16 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 className="text-2xl font-bold text-gray-800 mb-3">Sistema en Espera</h3>
+        <p className="text-gray-600 text-center mb-6 max-w-md">
+          Toque el botón cuando esté listo para iniciar la verificación facial
+        </p>
+        <button
+          onClick={() => {
+            setIsWaitingMode(false);
+            setConsecutiveTimeouts(0);
+            setError(null);
+            createNewSession(0);
+          }}
+          className="px-8 py-4 bg-blue-600 text-white text-lg font-semibold rounded-xl hover:bg-blue-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+        >
+          ▶ Iniciar Verificación
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="liveness-container">
       {/* Elementos ocultos para captura de imagen */}
@@ -401,63 +435,101 @@ export default function LivenessDetection({
           // Intentar extraer información útil del error
           let errorMessage = 'Desconocido';
           let shouldRetry = false;
+          let isTimeout = false;
           
           try {
-            logger.log('Error completo recibido:', error);
-            logger.log('Tipo de error:', typeof error);
-            logger.log('Keys del error:', error ? Object.keys(error) : []);
+            const errorObj = typeof error === 'object' && error ? error : {};
+            const errorStr = String(error);
             
-            if (error) {
-              const errorStr = String(error);
-              const errorObj = typeof error === 'object' ? error : {};
-              
-              // Manejo específico para errores comunes
-              if (errorStr.includes('credentials') || errorStr.includes('CredentialsError')) {
-                errorMessage = 'Error de credenciales de AWS. Verifique la configuración del Identity Pool.';
-                logger.error('❌ Error de credenciales AWS:', error);
-              }
-              else if (errorStr.includes('network') || errorStr.includes('NetworkError')) {
-                errorMessage = 'Error de conexión de red. Verifique su conexión a internet.';
-                shouldRetry = true;
-              }
-              else if ('state' in errorObj && errorObj.state === 'SERVER_ERROR') {
-                logger.log('Detectado error de servidor AWS:', error);
-                errorMessage = 'Error en el servidor de verificación AWS.';
-                shouldRetry = true;
-              }
-              else if (errorStr.includes('region') || errorStr.includes('identity pool')) {
-                errorMessage = 'Error de configuración de AWS. Verifique las variables de entorno.';
-                logger.error('❌ Error de configuración AWS:', error);
-              }
-              // Intentar convertir el error a string JSON si es posible
-              else if (typeof error === 'object') {
-                errorMessage = JSON.stringify(error, Object.getOwnPropertyNames(error));
-              } else {
-                errorMessage = errorStr;
-              }
+            // Verificar si es TIMEOUT de múltiples formas
+            isTimeout = (
+              ('state' in errorObj && (errorObj as { state?: string }).state === 'TIMEOUT') ||
+              errorStr.includes('TIMEOUT') ||
+              errorStr.includes('timeout') ||
+              errorStr.includes('Timeout')
+            );
+            
+            if (isTimeout) {
+              logger.log('⏱️ TIMEOUT detectado en verificación de liveness');
+              errorMessage = 'Tiempo agotado';
+              shouldRetry = true;
+            }
+            else if (errorStr.includes('credentials') || errorStr.includes('CredentialsError')) {
+              errorMessage = 'Error de credenciales de AWS. Verifique la configuración del Identity Pool.';
+              logger.error('❌ Error de credenciales AWS:', error);
+            }
+            else if (errorStr.includes('network') || errorStr.includes('NetworkError')) {
+              errorMessage = 'Error de conexión de red. Verifique su conexión a internet.';
+              shouldRetry = true;
+            }
+            else if ('state' in errorObj && (errorObj as { state?: string }).state === 'SERVER_ERROR') {
+              logger.log('Detectado error de servidor AWS:', error);
+              errorMessage = 'Error en el servidor de verificación AWS.';
+              shouldRetry = true;
+            }
+            else if (errorStr.includes('region') || errorStr.includes('identity pool')) {
+              errorMessage = 'Error de configuración de AWS. Verifique las variables de entorno.';
+              logger.error('❌ Error de configuración AWS:', error);
+            }
+            // Si el error está vacío, probablemente es un timeout
+            else if (errorStr === '{}' || errorStr === '[object Object]') {
+              logger.log('⏱️ Error vacío detectado - probablemente TIMEOUT');
+              errorMessage = 'Tiempo agotado';
+              shouldRetry = true;
+              isTimeout = true;
+            }
+            else if (typeof error === 'object') {
+              errorMessage = JSON.stringify(error, Object.getOwnPropertyNames(error));
+            } else {
+              errorMessage = errorStr;
             }
           } catch (parseError) {
             logger.error('Error al procesar el error:', parseError);
             errorMessage = 'Error no serializable';
           }
           
-          logger.error('🔍 Error detallado en la verificación de presencia:', {
-            error,
-            errorType: typeof error,
-            errorKeys: error ? Object.keys(error) : [],
-            errorMessage,
-            shouldRetry
-          });
-          
           // Decidir si reintentar automáticamente
-          if (shouldRetry && (errorMessage === '{}' || errorMessage.includes('SERVER_ERROR') || errorMessage.includes('network'))) {
-            logger.log('⏳ Reintentando automáticamente...');
-            setError('Reintentando verificación automáticamente...');
+          if (shouldRetry || isTimeout) {
+            logger.log('⏳ Reintentando automáticamente después de error/timeout...');
             
+            // Mensaje específico para TIMEOUT
+            if (isTimeout) {
+              logger.log('⏱️ TIMEOUT detectado - verificando timeouts consecutivos');
+              
+              // Verificar timeouts consecutivos
+              const newTimeoutCount = consecutiveTimeouts + 1;
+              setConsecutiveTimeouts(newTimeoutCount);
+              
+              if (newTimeoutCount >= MAX_CONSECUTIVE_TIMEOUTS) {
+                // Después de X timeouts, entrar en modo espera
+                logger.log(`🛑 ${newTimeoutCount} timeouts consecutivos detectados. Entrando en modo espera.`);
+                setIsWaitingMode(true);
+                setIsLoading(false);
+                setError(null);
+                return; // NO reintentar automáticamente
+              }
+              
+              setError('⏱️ Tiempo agotado. Preparando nueva verificación...');
+            } else {
+              logger.log('🔄 Error recuperable - reintentando automáticamente');
+              setError('🔄 Reintentando verificación automáticamente...');
+            }
+            
+            // No llamar a onError para errores recuperables - reintentar silenciosamente
             setTimeout(() => {
+              setError(null);
               createNewSession(0);
             }, 3000);
           } else {
+            // Solo para errores NO recuperables
+            logger.error('🔍 Error NO recuperable en la verificación de presencia:', {
+              error,
+              errorType: typeof error,
+              errorKeys: error ? Object.keys(error) : [],
+              errorMessage,
+              shouldRetry
+            });
+            
             setError(`Error en la verificación de presencia: ${errorMessage}`);
             onError(new Error(`Error en la verificación de presencia: ${errorMessage}`));
           }
@@ -469,39 +541,54 @@ export default function LivenessDetection({
           onCancel();
           return Promise.resolve();
         }}
-        disableStartScreen={false}
-        displayText={
-          {
-            camera: {
-              loading: "Inicializando cámara...",
-            },
-            instructions: {
-              header: "Siga las instrucciones para verificar su presencia",
-              preparing: "Preparando...",
-            },
-            oval: {
-              positionFace: "Posicione su rostro dentro del óvalo",
-              tooClose: "Aleje su rostro",
-              tooFar: "Acerque su rostro",
-            },
-            challenges: {
-              analyzing: "Analizando...",
-              faceDetected: "Rostro detectado",
-              lookStraight: "Mire al frente",
-              moveHead: "Mueva su cabeza lentamente",
-              blink: "Parpadee",
-              smile: "Sonría",
-              allComplete: "¡Verificación completada!",
-            },
-            feedback: {
-              success: "Verificación exitosa",
-            },
-            buttons: {
-              cancel: "Cancelar",
-              retry: "Reintentar",
-            }
-          } as Record<string, unknown>
-        }
+        disableStartScreen={true}
+        components={{
+          PhotosensitiveWarning: () => null,
+        }}
+        displayText={{
+          hintCenterFaceText: 'Centre su rostro',
+          hintTooManyFacesText: 'Asegúrese de que solo aparezca un rostro',
+          hintFaceDetectedText: 'Rostro detectado',
+          hintCanNotIdentifyText: 'Muévase para que podamos ver su rostro claramente',
+          hintTooCloseText: 'Aléjese un poco',
+          hintTooFarText: 'Acérquese más',
+          hintConnectingText: 'Conectando...',
+          hintVerifyingText: 'Verificando...',
+          hintIlluminationTooBrightText: 'Muévase a un lugar con menos luz',
+          hintIlluminationTooDarkText: 'Muévase a un lugar con más luz',
+          hintIlluminationNormalText: 'Iluminación correcta',
+          hintHoldFaceForFreshnessText: 'Mantenga la posición',
+          hintMoveFaceFrontOfCameraText: 'Colóquese frente a la cámara',
+          hintMatchIndicatorText: 'Verificación en progreso...',
+          cameraMinSpecificationsHeadingText: 'Requisitos mínimos de la cámara no cumplidos',
+          cameraMinSpecificationsMessageText: 'Su cámara no cumple con los requisitos mínimos. Por favor, use una cámara con mejor resolución.',
+          cameraNotFoundHeadingText: 'No se encontró cámara',
+          cameraNotFoundMessageText: 'No se detectó ninguna cámara. Por favor, conecte una cámara y vuelva a intentarlo.',
+          a11yVideoLabelText: 'Video en vivo de verificación facial',
+          cancelLivenessCheckText: 'Cancelar verificación',
+          goodFitCaptionText: 'Posición correcta',
+          tooFarCaptionText: 'Demasiado lejos',
+          hintCenterFaceInstructionText: 'Centre su rostro dentro del óvalo',
+          startScreenBeginCheckText: 'Iniciar verificación de video',
+          waitingCameraPermissionText: 'Esperando permisos de la cámara',
+          recordingIndicatorText: 'Grabando',
+          retryCameraPermissionsText: 'Reintentar',
+          errorLabelText: 'Error',
+          timeoutHeaderText: 'Tiempo Agotado',
+          timeoutMessageText: 'No se completó la verificación a tiempo. Manténgase frente a la cámara y siga las instrucciones. Reintentando automáticamente...',
+          faceDistanceHeaderText: 'Distancia incorrecta',
+          faceDistanceMessageText: 'Por favor, ajuste su distancia a la cámara.',
+          multipleFacesHeaderText: 'Múltiples rostros detectados',
+          multipleFacesMessageText: 'Asegúrese de que solo aparezca un rostro en la cámara.',
+          clientHeaderText: 'Error del cliente',
+          clientMessageText: 'Ha ocurrido un error. Por favor, intente nuevamente.',
+          serverHeaderText: 'Error del servidor',
+          serverMessageText: 'No se pudo procesar su solicitud. Por favor, intente más tarde.',
+          landscapeHeaderText: 'Orientación no soportada',
+          landscapeMessageText: 'Por favor, gire su dispositivo a modo vertical.',
+          portraitMessageText: 'Por favor, mantenga su dispositivo en modo vertical.',
+          tryAgainText: 'Intentar nuevamente'
+        }}
       />
       
       {status === 'success' && (
@@ -565,6 +652,85 @@ export default function LivenessDetection({
         .amplify-liveness-challenge-indicator-completed {
           background-color: #22C55E !important;
         }
+
+        /* Ocultar botón de cerrar (X) */
+        [data-testid="close-icon"],
+        [aria-label="Close"],
+        .amplify-button--link[aria-label*="Cancel"],
+        .amplify-button--link[aria-label*="Cancelar"],
+        button[aria-label*="cancel" i],
+        button[aria-label*="cancelar" i],
+        button[aria-label*="close" i],
+        button[aria-label*="cerrar" i] {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
+
+        /* Ocultar el botón X específico del componente de Amplify */
+        .amplify-liveness__cancel-button,
+        .amplify-button--close {
+          display: none !important;
+        }
+
+        /* OCULTAR COMPLETAMENTE el indicador "Grabando" para evitar sobreposición */
+        [data-testid="recording-indicator"],
+        .amplify-liveness__recording-indicator,
+        .amplify-liveness-recording-indicator,
+        .amplify-liveness__stream-text,
+        [class*="recording"],
+        [class*="Recording"] {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          height: 0 !important;
+          width: 0 !important;
+          overflow: hidden !important;
+          position: absolute !important;
+          pointer-events: none !important;
+        }
+
+        /* Ocultar cualquier elemento que contenga el texto "Grabando" o "Recording" */
+        div:has-text("Grabando"),
+        div:has-text("Recording"),
+        span:has-text("Grabando"),
+        span:has-text("Recording") {
+          display: none !important;
+        }
+
+        /* Ajustar el contenedor de instrucciones para mejor visibilidad y evitar superposiciones */
+        .amplify-liveness__hint-container,
+        .amplify-liveness-hint-container {
+          background-color: rgba(0, 0, 0, 0.8) !important;
+          padding: 12px 20px !important;
+          border-radius: 12px !important;
+          margin: 20px auto !important;
+          max-width: 85% !important;
+          text-align: center !important;
+          position: relative !important;
+          z-index: 100 !important;
+        }
+
+        /* Mejorar la visibilidad del texto de instrucciones con tamaño reducido */
+        .amplify-liveness__hint-text,
+        .amplify-liveness-hint-text {
+          font-size: 16px !important;
+          font-weight: 600 !important;
+          color: #ffffff !important;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6) !important;
+          line-height: 1.3 !important;
+          letter-spacing: 0.3px !important;
+        }
+
+        /* Forzar ocultar elementos con posicionamiento absoluto en la parte superior */
+        .amplify-liveness-detector > div > div:first-child {
+          position: relative !important;
+        }
+
+        .amplify-liveness-detector [style*="position: absolute"][style*="top"] {
+          display: none !important;
+        }
       `}</style>
       
       <style jsx>{`
@@ -588,4 +754,4 @@ export default function LivenessDetection({
       `}</style>
     </div>
   );
-} 
+}
