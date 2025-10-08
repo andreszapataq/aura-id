@@ -49,6 +49,12 @@ function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Prevenir múltiples submits
+    if (loading) {
+      return
+    }
+    
     setError(null)
     setSuccess(null)
     setLoading(true)
