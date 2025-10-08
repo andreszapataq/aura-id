@@ -130,6 +130,7 @@ function LoginForm() {
               width={64} 
               height={64}
               className="mx-auto mb-4"
+              unoptimized
             />
           </Link>
           <h1 className="text-3xl font-bold mb-2">

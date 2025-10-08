@@ -43,6 +43,7 @@ export default function Footer() {
                 width={24} 
                 height={24}
                 className="h-6 w-auto"
+                unoptimized
               />
               <span className="ml-2 text-sm text-[#014F59]">
                 © {currentYear} Aura ID. Todos los derechos reservados.

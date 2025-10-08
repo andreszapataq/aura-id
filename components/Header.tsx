@@ -62,6 +62,7 @@ export default function Header() {
                   width={32} 
                   height={32}
                   className="h-8 w-auto"
+                  unoptimized
                 />
                 <span className="ml-2 text-xl font-bold text-black">Aura ID</span>
               </Link>
