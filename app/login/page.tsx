@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
 import Link from "next/link"
-// import Image from "next/image"
+import Image from "next/image"
 import { useAuth } from "@/contexts/AuthContext"
 
 function LoginForm() {
@@ -124,7 +124,7 @@ function LoginForm() {
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-block">
-            <img 
+            <Image 
               src="/logo.svg" 
               alt="Aura ID Logo" 
               width={64} 
