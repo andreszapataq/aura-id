@@ -21,7 +21,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1. Crear el usuario en Supabase Auth usando el cliente admin
+    // 1. Verificar si el usuario ya existe
+    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
+    const existingUser = existingUsers?.users?.find(u => u.email === email)
+
+    if (existingUser) {
+      // Si el usuario existe, limpiarlo completamente antes de recrear
+      logger.log('Usuario existente encontrado, limpiando...', existingUser.id)
+      
+      // Eliminar perfil de usuario
+      await supabaseAdmin.from('users').delete().eq('id', existingUser.id)
+      
+      // Eliminar organizaciones asociadas
+      await supabaseAdmin.from('organizations').delete().eq('owner_id', existingUser.id)
+      
+      // Eliminar usuario de Auth
+      await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
+      
+      logger.log('Usuario anterior eliminado correctamente')
+    }
+
+    // 2. Crear el usuario en Supabase Auth usando el cliente admin
     const { data: authData, error: signUpError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -47,7 +67,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 2. Crear la organización en la base de datos
+    // 3. Crear la organización en la base de datos
     const { data: orgData, error: orgError } = await supabaseAdmin
       .from('organizations')
       .insert({
@@ -68,7 +88,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 3. Crear el perfil de usuario en la tabla users
+    // 4. Crear el perfil de usuario en la tabla users
     const { error: profileError } = await supabaseAdmin
       .from('users')
       .insert({
