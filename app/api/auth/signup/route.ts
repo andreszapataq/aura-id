@@ -29,16 +29,41 @@ export async function POST(request: NextRequest) {
       // Si el usuario existe, limpiarlo completamente antes de recrear
       logger.log('Usuario existente encontrado, limpiando...', existingUser.id)
       
-      // Eliminar perfil de usuario
-      await supabaseAdmin.from('users').delete().eq('id', existingUser.id)
-      
-      // Eliminar organizaciones asociadas
-      await supabaseAdmin.from('organizations').delete().eq('owner_id', existingUser.id)
-      
-      // Eliminar usuario de Auth
-      await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
-      
-      logger.log('Usuario anterior eliminado correctamente')
+      try {
+        // Eliminar perfil de usuario
+        const { error: deleteProfileError } = await supabaseAdmin.from('users').delete().eq('id', existingUser.id)
+        if (deleteProfileError) {
+          logger.error('Error al eliminar perfil:', deleteProfileError)
+        }
+        
+        // Eliminar organizaciones asociadas
+        const { error: deleteOrgError } = await supabaseAdmin.from('organizations').delete().eq('owner_id', existingUser.id)
+        if (deleteOrgError) {
+          logger.error('Error al eliminar organizaciones:', deleteOrgError)
+        }
+        
+        // Eliminar usuario de Auth
+        const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
+        if (deleteAuthError) {
+          logger.error('Error al eliminar usuario de Auth:', deleteAuthError)
+          // Si no se puede eliminar, retornar error específico
+          return NextResponse.json(
+            { error: 'El usuario ya existe y no se pudo eliminar. Por favor, contacta al administrador o usa otro email.' },
+            { status: 409 }
+          )
+        }
+        
+        logger.log('Usuario anterior eliminado correctamente')
+        
+        // Esperar un poco para asegurar que la eliminación se haya completado
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      } catch (cleanupError) {
+        logger.error('Error durante la limpieza:', cleanupError)
+        return NextResponse.json(
+          { error: 'Error al limpiar usuario existente. Por favor, intenta con otro email.' },
+          { status: 500 }
+        )
+      }
     }
 
     // 2. Crear el usuario en Supabase Auth usando el cliente admin
