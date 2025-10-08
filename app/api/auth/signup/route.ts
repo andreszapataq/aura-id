@@ -3,11 +3,16 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
+  const requestId = Math.random().toString(36).substring(7)
+  logger.log(`[${requestId}] === INICIO DE SOLICITUD DE REGISTRO ===`)
+  
   try {
     const { email, password, fullName, organizationName } = await request.json()
+    logger.log(`[${requestId}] Email: ${email}, Nombre: ${fullName}, Org: ${organizationName}`)
 
     // Validaciones básicas
     if (!email || !password || !fullName || !organizationName) {
+      logger.error(`[${requestId}] Faltan campos requeridos`)
       return NextResponse.json(
         { error: 'Todos los campos son requeridos' },
         { status: 400 }
@@ -15,6 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (password.length < 6) {
+      logger.error(`[${requestId}] Contraseña muy corta`)
       return NextResponse.json(
         { error: 'La contraseña debe tener al menos 6 caracteres' },
         { status: 400 }
@@ -22,12 +28,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Verificar si el usuario ya existe
+    logger.log(`[${requestId}] Paso 1: Verificando si el usuario ya existe...`)
     const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
     const existingUser = existingUsers?.users?.find(u => u.email === email)
+    logger.log(`[${requestId}] Usuario existente: ${existingUser ? 'SÍ (' + existingUser.id + ')' : 'NO'}`)
 
     if (existingUser) {
       // Si el usuario existe, limpiarlo completamente antes de recrear
-      logger.log('Usuario existente encontrado, limpiando...', existingUser.id)
+      logger.log(`[${requestId}] Usuario existente encontrado, limpiando...`, existingUser.id)
       
       try {
         // Eliminar perfil de usuario
@@ -67,7 +75,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Crear el usuario en Supabase Auth usando el cliente admin
-    const { data: authData, error: signUpError } = await supabaseAdmin.auth.admin.createUser({
+    logger.log(`[${requestId}] Paso 2: Creando usuario en Supabase Auth...`)
+    const { data: authData, error: signUpError} = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true, // Auto-confirmar el email
@@ -78,7 +87,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (signUpError) {
-      logger.error('Error durante el registro:', signUpError)
+      logger.error(`[${requestId}] Error durante el registro:`, signUpError)
       return NextResponse.json(
         { error: signUpError.message || 'Error al crear el usuario' },
         { status: 400 }
@@ -86,13 +95,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (!authData.user) {
+      logger.error(`[${requestId}] No se devolvió el usuario`)
       return NextResponse.json(
         { error: 'No se pudo crear el usuario' },
         { status: 500 }
       )
     }
 
+    logger.log(`[${requestId}] Usuario creado en Auth exitosamente: ${authData.user.id}`)
+
     // 3. Crear la organización en la base de datos
+    logger.log(`[${requestId}] Paso 3: Creando organización...`)
     const { data: orgData, error: orgError } = await supabaseAdmin
       .from('organizations')
       .insert({
@@ -104,7 +117,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (orgError) {
-      logger.error('Error al crear la organización:', orgError)
+      logger.error(`[${requestId}] Error al crear la organización:`, orgError)
       // Intentar eliminar el usuario creado
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
       return NextResponse.json(
@@ -113,7 +126,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    logger.log(`[${requestId}] Organización creada exitosamente: ${orgData.id}`)
+
     // 4. Crear el perfil de usuario en la tabla users
+    logger.log(`[${requestId}] Paso 4: Creando perfil de usuario en la tabla users...`)
     const { error: profileError } = await supabaseAdmin
       .from('users')
       .insert({
@@ -127,7 +143,8 @@ export async function POST(request: NextRequest) {
       })
 
     if (profileError) {
-      logger.error('Error al crear el perfil de usuario:', profileError)
+      logger.error(`[${requestId}] ERROR CRÍTICO al crear el perfil de usuario:`, profileError)
+      logger.error(`[${requestId}] Detalles del error:`, JSON.stringify(profileError, null, 2))
       // Intentar limpiar los datos creados
       await supabaseAdmin.from('organizations').delete().eq('id', orgData.id)
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
@@ -138,7 +155,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Éxito completo
-    logger.log('Usuario, organización y perfil creados exitosamente')
+    logger.log(`[${requestId}] ✅ Usuario, organización y perfil creados exitosamente`)
     return NextResponse.json(
       { 
         success: true,
