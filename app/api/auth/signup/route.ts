@@ -128,11 +128,12 @@ export async function POST(request: NextRequest) {
 
     logger.log(`[${requestId}] Organización creada exitosamente: ${orgData.id}`)
 
-    // 4. Crear el perfil de usuario en la tabla users
-    logger.log(`[${requestId}] Paso 4: Creando perfil de usuario en la tabla users...`)
+    // 4. Crear/Actualizar el perfil de usuario en la tabla users
+    // Usamos upsert porque puede haber un trigger que ya creó el usuario
+    logger.log(`[${requestId}] Paso 4: Creando/actualizando perfil de usuario en la tabla users...`)
     const { error: profileError } = await supabaseAdmin
       .from('users')
-      .insert({
+      .upsert({
         id: authData.user.id,
         email: email,
         full_name: fullName,
@@ -140,6 +141,8 @@ export async function POST(request: NextRequest) {
         organization_id: orgData.id,
         is_kiosk: false,
         lock_session: false,
+      }, {
+        onConflict: 'id' // Si el ID ya existe, actualizar
       })
 
     if (profileError) {
