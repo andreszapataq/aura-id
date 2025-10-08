@@ -57,12 +57,11 @@ export default function Header() {
             <div className="flex-shrink-0 flex items-center">
               <Link href="/" className="flex items-center">
                 <Image 
-                  src="/logo.svg" 
+                  src="/logo.png" 
                   alt="Aura ID Logo" 
                   width={32} 
                   height={32}
                   className="h-8 w-auto"
-                  unoptimized
                 />
                 <span className="ml-2 text-xl font-bold text-black">Aura ID</span>
               </Link>

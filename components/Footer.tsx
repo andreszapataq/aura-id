@@ -38,12 +38,11 @@ export default function Footer() {
           <div className="mt-8 md:mt-0 flex items-center justify-center md:justify-end">
             <div className="flex items-center">
               <Image 
-                src="/logo.svg" 
+                src="/logo.png" 
                 alt="Aura ID Logo" 
                 width={24} 
                 height={24}
                 className="h-6 w-auto"
-                unoptimized
               />
               <span className="ml-2 text-sm text-[#014F59]">
                 © {currentYear} Aura ID. Todos los derechos reservados.
