@@ -269,12 +269,6 @@ function LoginForm() {
             </p>
           </div>
         </div>
-
-        <div className="mt-8 text-center">
-          <Link href="/" className="text-blue-600 hover:text-blue-700 hover:underline">
-            ← Volver al inicio
-          </Link>
-        </div>
       </div>
     </motion.div>
   )

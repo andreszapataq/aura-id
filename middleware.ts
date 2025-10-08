@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 // Lista de rutas públicas que no requieren autenticación
-const publicPaths = ['/login', '/auth/callback', '/auth/handle-session', '/kiosk-login'];
+const publicPaths = ['/', '/login', '/auth/callback', '/auth/handle-session', '/kiosk-login'];
 
 // Rutas que solo pueden acceder administradores
 const adminOnlyPaths = ['/register', '/reports', '/admin'];
