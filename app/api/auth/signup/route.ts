@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'signup',
       email: email,
+      password: password, // Requerido para generateLink de tipo signup
       options: {
         redirectTo: `${siteUrl}/auth/callback`
       }
