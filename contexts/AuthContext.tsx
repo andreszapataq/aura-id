@@ -31,7 +31,7 @@ type AuthContextType = {
   isKiosk: boolean
   canLogout: boolean
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
-  signUp: (email: string, password: string, fullName: string, organizationName: string) => Promise<{ error: AuthError | null, user: User | null }>
+  signUp: (email: string, password: string, fullName: string, organizationName: string) => Promise<{ error: AuthError | null, user: User | null, message?: string }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -46,7 +46,7 @@ const AuthContext = createContext<AuthContextType>({
   isKiosk: false,
   canLogout: true,
   signIn: async () => ({ error: null }),
-  signUp: async () => ({ error: null, user: null }),
+  signUp: async () => ({ error: null, user: null, message: undefined }),
   signOut: async () => {},
   refreshProfile: async () => {}
 })
@@ -194,21 +194,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new AuthError(data.error || 'Error al crear el usuario'), user: null };
       }
 
-      // Usuario creado exitosamente, ahora iniciar sesión automáticamente
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        logger.error('Usuario creado pero error al iniciar sesión:', signInError);
-        // El usuario fue creado, pero no pudimos iniciar sesión automáticamente
-        return { error: new AuthError('Usuario creado exitosamente. Por favor, inicia sesión manualmente.'), user: null };
-      }
-
-      // Éxito completo
-      logger.log('Usuario creado e iniciado sesión exitosamente');
-      return { error: null, user: data.user };
+      // Usuario creado exitosamente
+      // Ya NO iniciamos sesión automáticamente porque requiere confirmación de email
+      logger.log('Usuario creado exitosamente. Requiere confirmación de email.');
+      
+      return { 
+        error: null, 
+        user: data.user,
+        message: data.message || 'Por favor, revisa tu correo electrónico para confirmar tu cuenta.'
+      };
 
     } catch (error) {
       logger.error('Error inesperado durante el proceso de signUp:', error);

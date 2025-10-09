@@ -72,18 +72,20 @@ function LoginForm() {
         }
 
         // Registrar usuario
-        const { error: signUpError } = await signUp(email, password, fullName, organizationName)
+        const { error: signUpError, message } = await signUp(email, password, fullName, organizationName)
 
         if (signUpError) {
           throw new Error(signUpError.message || "Error al crear la cuenta")
         }
 
-        setSuccess("¡Cuenta creada con éxito! Por favor, verifica tu correo electrónico para activar tu cuenta.")
+        // Mostrar mensaje de éxito con instrucción de confirmar email
+        setSuccess(message || "¡Cuenta creada con éxito! Por favor, revisa tu correo electrónico para confirmar tu cuenta y poder iniciar sesión.")
         setIsRegistering(false)
         setPassword("")
         setConfirmPassword("")
         setFullName("")
         setOrganizationName("")
+        setEmail("") // Limpiar email también
       } else {
         // Iniciar sesión
         const { error: signInError } = await signIn(email, password)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { logger } from '@/lib/logger'
+import { sendConfirmationEmail } from '@/lib/resend'
 
 export async function POST(request: NextRequest) {
   const requestId = Math.random().toString(36).substring(7)
@@ -74,12 +75,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Crear el usuario en Supabase Auth usando el cliente admin
+    // 2. Crear el usuario en Supabase Auth (SIN auto-confirmar)
     logger.log(`[${requestId}] Paso 2: Creando usuario en Supabase Auth...`)
     const { data: authData, error: signUpError} = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // Auto-confirmar el email
+      email_confirm: false, // Requiere confirmación por email
       user_metadata: {
         full_name: fullName,
         organization_name: organizationName,
@@ -157,12 +158,42 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 5. Generar link de confirmación
+    logger.log(`[${requestId}] Paso 5: Generando link de confirmación...`)
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'signup',
+      email: email,
+      options: {
+        redirectTo: `${siteUrl}/auth/callback`
+      }
+    })
+
+    if (linkError || !linkData?.properties?.action_link) {
+      logger.error(`[${requestId}] Error al generar link de confirmación:`, linkError)
+      // No fallar todo el proceso, pero advertir
+      logger.warn(`[${requestId}] Usuario creado pero no se pudo enviar email de confirmación`)
+    } else {
+      // 6. Enviar email de confirmación
+      logger.log(`[${requestId}] Paso 6: Enviando email de confirmación...`)
+      const confirmationLink = linkData.properties.action_link
+      const emailResult = await sendConfirmationEmail(email, fullName, confirmationLink)
+      
+      if (!emailResult.success) {
+        logger.error(`[${requestId}] Error al enviar email:`, emailResult.error)
+        logger.warn(`[${requestId}] Usuario creado pero email no enviado`)
+      } else {
+        logger.log(`[${requestId}] ✅ Email de confirmación enviado exitosamente`)
+      }
+    }
+
     // Éxito completo
     logger.log(`[${requestId}] ✅ Usuario, organización y perfil creados exitosamente`)
     return NextResponse.json(
       { 
         success: true,
-        message: 'Usuario creado exitosamente',
+        message: 'Usuario creado exitosamente. Por favor, revisa tu correo electrónico para confirmar tu cuenta.',
+        requiresEmailConfirmation: true,
         user: {
           id: authData.user.id,
           email: authData.user.email
