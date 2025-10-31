@@ -107,9 +107,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setLoading(true); // Empieza cargando
     const getSessionAndSubscribe = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setUser(session?.user ?? null);
+      // Usar getUser() para validar contra el servidor y evitar warnings de autenticidad
+      const { data: { user } } = await supabase.auth.getUser();
+      const sessionLike = user ? { user } as unknown as Session : null;
+      setSession(sessionLike);
+      setUser(user ?? null);
       
       // Cargar perfil si hay usuario
       if (session?.user) {
@@ -119,13 +121,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false); // Termina la carga inicial
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (_event, session) => {
-          setSession(session);
-          setUser(session?.user ?? null);
+        async (_event) => {
+          // En cada cambio, consultar al servidor el usuario actual
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
+          const newSession = currentUser ? { user: currentUser } as unknown as Session : null;
+          setSession(newSession);
+          setUser(currentUser ?? null);
           
           // Cargar perfil si hay usuario
-          if (session?.user) {
-            await loadUserProfile(session.user.id);
+          if (currentUser) {
+            await loadUserProfile(currentUser.id);
           } else {
             // Limpiar perfil si no hay usuario
             setUserProfile(null);

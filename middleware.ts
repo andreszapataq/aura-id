@@ -29,8 +29,10 @@ export async function middleware(request: NextRequest) {
       }
     )
     
-    // Verificar si hay una sesión
-    const { data: { session } } = await supabase.auth.getSession()
+    // Verificar usuario autenticado de forma segura (evita leer sesión no autenticada de cookies)
+    const { data: { user } } = await supabase.auth.getUser()
+    // Mantener la misma interfaz usada abajo para no alterar la lógica existente
+    const session = user ? { user } as unknown as { user: { id: string } } : null
     
     // URL actual y de login
     const path = request.nextUrl.pathname

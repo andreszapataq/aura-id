@@ -8,12 +8,14 @@ export const supabase = createBrowserClient(
 
 // Función de ayuda para obtener la sesión del usuario
 export const getUserSession = async () => {
-  const { data, error } = await supabase.auth.getSession()
+  // Consultar al servidor para autenticar el usuario actual
+  const { data, error } = await supabase.auth.getUser()
   if (error) {
-    console.error('Error al obtener la sesión:', error)
+    console.error('Error al obtener el usuario:', error)
     return null
   }
-  return data.session
+  // Mantener interfaz similar (session-like) para no romper llamadas existentes
+  return data.user ? ({ user: data.user } as unknown as { user: unknown }) : null
 }
 
 // Función para obtener el usuario actual
