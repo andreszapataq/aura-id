@@ -44,6 +44,7 @@ export default function LivenessDetection({
   const [status, setStatus] = useState<'success' | 'error' | null>(null);
   const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0);
   const [isWaitingMode, setIsWaitingMode] = useState(false);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Función para crear una nueva sesión
   const createNewSession = useCallback(async (currentRetryCount = 0) => {
@@ -115,10 +116,32 @@ export default function LivenessDetection({
   useEffect(() => {
     createNewSession(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    
+    // Cleanup: cancelar cualquier timeout pendiente al desmontar
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
   }, []); // Sin dependencias para evitar bucle infinito
 
   // Función wrapper para handlers de botón
   const handleRetryClick = () => {
+    // Cancelar cualquier reintento automático pendiente
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    
+    // Resetear todos los estados relevantes antes de reintentar
+    setConsecutiveTimeouts(0);
+    setIsWaitingMode(false);
+    setError(null);
+    setIsLoading(false);
+    setSessionId(null);
+    setSessionUrl(null);
+    setStatus(null);
     createNewSession(0);
   };
 
@@ -516,8 +539,13 @@ export default function LivenessDetection({
             }
             
             // No llamar a onError para errores recuperables - reintentar silenciosamente
-            setTimeout(() => {
+            // Cancelar cualquier reintento anterior antes de programar uno nuevo
+            if (retryTimeoutRef.current) {
+              clearTimeout(retryTimeoutRef.current);
+            }
+            retryTimeoutRef.current = setTimeout(() => {
               setError(null);
+              retryTimeoutRef.current = null;
               createNewSession(0);
             }, 3000);
           } else {
