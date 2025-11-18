@@ -10,6 +10,7 @@ interface ReportEntry {
   timestamp: string
   type: string
   auto_generated: boolean
+  originalTimestamp?: string // Para mantener el timestamp original en formato ISO
 }
 
 interface Employee {
@@ -35,6 +36,11 @@ export default function Reports() {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all")
   const [loading, setLoading] = useState(false)
   const [filterApplied, setFilterApplied] = useState(false)
+  
+  // Estados para edición de hora
+  const [editingLogId, setEditingLogId] = useState<number | null>(null)
+  const [editingTime, setEditingTime] = useState<string>("")
+  const [savingEdit, setSavingEdit] = useState(false)
 
   useEffect(() => {
     // Establecer rango de fechas por defecto (últimos 3 meses para incluir más registros)
@@ -121,6 +127,67 @@ export default function Reports() {
     }
   }
 
+  // Función para iniciar edición de hora
+  const startEditTime = (log: ReportEntry) => {
+    if (!log.auto_generated) return; // Solo auto-generados
+    
+    setEditingLogId(log.id);
+    // Extraer la hora del timestamp original
+    const date = new Date(log.originalTimestamp || log.timestamp);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    setEditingTime(`${hours}:${minutes}`);
+  };
+
+  // Función para cancelar edición
+  const cancelEdit = () => {
+    setEditingLogId(null);
+    setEditingTime("");
+  };
+
+  // Función para guardar edición de hora
+  const saveEditTime = async (logId: number) => {
+    if (!editingTime) {
+      alert('Por favor, ingrese una hora válida');
+      return;
+    }
+    
+    setSavingEdit(true);
+    try {
+      const response = await fetch('/api/access/update-time', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          logId,
+          newTime: editingTime,
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        alert(result.error || 'Error al actualizar la hora');
+        return;
+      }
+      
+      // Recargar el reporte para ver los cambios
+      const e = { preventDefault: () => {} } as React.FormEvent;
+      await generateReport(e);
+      
+      setEditingLogId(null);
+      setEditingTime("");
+      
+      alert('✅ Hora actualizada correctamente');
+    } catch (error) {
+      console.error('Error al actualizar hora:', error);
+      alert('Error al actualizar la hora. Por favor, intente nuevamente.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   async function generateReport(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
@@ -158,7 +225,8 @@ export default function Reports() {
           timeStyle: "medium",
         }),
         type: log.type,
-        auto_generated: log.auto_generated
+        auto_generated: log.auto_generated,
+        originalTimestamp: log.timestamp // Guardar el timestamp original en formato ISO
       }));
 
       console.log("✅ Datos procesados:", reportData.length);
@@ -352,8 +420,49 @@ export default function Reports() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {entry.employeeId}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {entry.timestamp}
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {editingLogId === entry.id ? (
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="time"
+                                  value={editingTime}
+                                  onChange={(e) => setEditingTime(e.target.value)}
+                                  className="input input-sm max-w-[120px] border border-gray-300 rounded px-2 py-1"
+                                  disabled={savingEdit}
+                                />
+                                <button
+                                  onClick={() => saveEditTime(entry.id)}
+                                  disabled={savingEdit}
+                                  className="text-green-600 hover:text-green-800 p-1 disabled:opacity-50"
+                                  title="Guardar"
+                                >
+                                  {savingEdit ? '...' : '✓'}
+                                </button>
+                                <button
+                                  onClick={cancelEdit}
+                                  disabled={savingEdit}
+                                  className="text-gray-600 hover:text-gray-800 p-1 disabled:opacity-50"
+                                  title="Cancelar"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-2">
+                                <span className="whitespace-nowrap">{entry.timestamp}</span>
+                                {entry.auto_generated && (
+                                  <button
+                                    onClick={() => startEditTime(entry)}
+                                    className="text-blue-500 hover:text-blue-700 opacity-70 hover:opacity-100 transition-opacity"
+                                    title="Editar hora del registro automático"
+                                  >
+                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-medium rounded-full ${

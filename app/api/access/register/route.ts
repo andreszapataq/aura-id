@@ -101,31 +101,14 @@ export async function POST(request: Request) {
 
     let autoCloseGenerated = false;
 
-    // Si hay un registro previo del mismo tipo (salvo el primer registro)
-    if (lastLog && !lastLogError && lastLog.type === type) {
-      const tipoAcceso = type === 'check_in' ? 'entrada' : 'salida';
-      const tipoOpuesto = type === 'check_in' ? 'salida' : 'entrada';
-      const lastTimestamp = new Date(lastLog.timestamp).toLocaleString('es-CO', {
-        dateStyle: "short",
-        timeStyle: "short"
-      });
-      
-      return NextResponse.json(
-        { 
-          error: `No puede registrar ${tipoAcceso} dos veces seguidas. Su último registro fue una ${tipoAcceso} el ${lastTimestamp}. Debe registrar una ${tipoOpuesto} primero.` 
-        },
-        { status: 400 }
-      );
-    }
-
-    // Si hay una entrada sin salida de un día anterior, generar salida automática
+    // Si hay una entrada sin salida de un día anterior, generar salida automática PRIMERO
     if (lastLog && lastLog.type === "check_in" && type === "check_in") {
       const lastLogDate = new Date(lastLog.timestamp);
       const today = new Date();
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       
       if (lastLogDate < todayStart) {
-        // Registrar salida automática para el día anterior
+        // Registrar salida automática a las 11:59:59 PM del día anterior
         const closingTime = new Date(
           lastLogDate.getFullYear(),
           lastLogDate.getMonth(),
@@ -141,7 +124,25 @@ export async function POST(request: Request) {
         });
         
         autoCloseGenerated = true;
+        console.log('🔄 Salida automática generada a las 11:59:59 PM del día anterior');
       }
+    }
+
+    // Si hay un registro previo del mismo tipo el mismo día (después de verificar días anteriores)
+    if (lastLog && !lastLogError && lastLog.type === type && !autoCloseGenerated) {
+      const tipoAcceso = type === 'check_in' ? 'entrada' : 'salida';
+      const tipoOpuesto = type === 'check_in' ? 'salida' : 'entrada';
+      const lastTimestamp = new Date(lastLog.timestamp).toLocaleString('es-CO', {
+        dateStyle: "short",
+        timeStyle: "short"
+      });
+      
+      return NextResponse.json(
+        { 
+          error: `No puede registrar ${tipoAcceso} dos veces seguidas. Su último registro fue una ${tipoAcceso} el ${lastTimestamp}. Debe registrar una ${tipoOpuesto} primero.` 
+        },
+        { status: 400 }
+      );
     }
 
     // Registrar nuevo acceso
