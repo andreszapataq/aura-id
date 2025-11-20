@@ -103,28 +103,31 @@ export async function POST(request: Request) {
 
     // Si hay una entrada sin salida de un día anterior, generar salida automática PRIMERO
     if (lastLog && lastLog.type === "check_in" && type === "check_in") {
-      const lastLogDate = new Date(lastLog.timestamp);
-      const today = new Date();
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      // Usar hora de Colombia para determinar si es un día diferente
+      const timeZone = "America/Bogota";
       
-      if (lastLogDate < todayStart) {
-        // Registrar salida automática a las 11:59:59 PM del día anterior
-        const closingTime = new Date(
-          lastLogDate.getFullYear(),
-          lastLogDate.getMonth(),
-          lastLogDate.getDate(),
-          23, 59, 59
-        );
+      const getBogotaYMD = (dateStr: string | Date) => {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString("en-CA", { timeZone }); // Devuelve YYYY-MM-DD
+      };
+
+      const lastLogDateStr = getBogotaYMD(lastLog.timestamp);
+      const todayDateStr = getBogotaYMD(new Date());
+
+      if (lastLogDateStr < todayDateStr) {
+        // Registrar salida automática a las 11:59:59 PM del día del último registro
+        // Construimos el timestamp con el offset de Colombia (-05:00)
+        const closingTimeStr = `${lastLogDateStr}T23:59:59-05:00`;
         
         await supabaseAdmin.from("access_logs").insert({
           employee_id: employee.id,
-          timestamp: closingTime.toISOString(),
+          timestamp: new Date(closingTimeStr).toISOString(),
           type: "check_out",
           auto_generated: true
         });
         
         autoCloseGenerated = true;
-        console.log('🔄 Salida automática generada a las 11:59:59 PM del día anterior');
+        console.log('🔄 Salida automática generada a las 11:59:59 PM del día anterior (Colombia Time)');
       }
     }
 
@@ -133,6 +136,7 @@ export async function POST(request: Request) {
       const tipoAcceso = type === 'check_in' ? 'entrada' : 'salida';
       const tipoOpuesto = type === 'check_in' ? 'salida' : 'entrada';
       const lastTimestamp = new Date(lastLog.timestamp).toLocaleString('es-CO', {
+        timeZone: 'America/Bogota',
         dateStyle: "short",
         timeStyle: "short"
       });

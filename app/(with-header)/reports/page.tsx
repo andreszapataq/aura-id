@@ -221,6 +221,7 @@ export default function Reports() {
         name: log.name,
         employeeId: log.employeeId,
         timestamp: new Date(log.timestamp).toLocaleString("es-CO", {
+          timeZone: "America/Bogota",
           dateStyle: "medium",
           timeStyle: "medium",
         }),

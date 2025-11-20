@@ -60,31 +60,37 @@ export async function PATCH(request: Request) {
 
     // Parsear la hora proporcionada
     const [hours, minutes] = newTime.split(":").map(Number);
+    const pad = (n: number) => n.toString().padStart(2, '0');
 
-    // Crear nueva fecha manteniendo el día original pero con la nueva hora
+    // Determinar la fecha original en hora de Colombia
+    const timeZone = "America/Bogota";
     const originalDate = new Date(log.timestamp);
-    const newTimestamp = new Date(
-      originalDate.getFullYear(),
-      originalDate.getMonth(),
-      originalDate.getDate(),
-      hours,
-      minutes,
-      0
-    );
+    
+    // Usar Intl para obtener YYYY-MM-DD en hora de Colombia de forma segura
+    const bogotaFormatter = new Intl.DateTimeFormat("en-CA", {
+       timeZone,
+       year: "numeric",
+       month: "2-digit",
+       day: "2-digit"
+    });
+    
+    const bogotaDateStr = bogotaFormatter.format(originalDate);
 
-    console.log('⏰ Nueva fecha calculada:', {
-      original: originalDate.toISOString(),
-      nueva: newTimestamp.toISOString(),
+    // Construir la nueva fecha usando la fecha de Colombia (YYYY-MM-DD) y la nueva hora, con offset fijo -05:00
+    const newTimestampStr = `${bogotaDateStr}T${pad(hours)}:${pad(minutes)}:00-05:00`;
+    const newTimestamp = new Date(newTimestampStr);
+    
+    console.log('⏰ Nueva fecha calculada (Colombia):', {
+      originalUTC: originalDate.toISOString(),
+      bogotaDate: bogotaDateStr,
+      nuevaUTC: newTimestamp.toISOString(),
       horaNueva: `${hours}:${minutes}`
     });
 
-    // Validación: La nueva hora debe estar dentro del mismo día
-    if (newTimestamp.getDate() !== originalDate.getDate() ||
-        newTimestamp.getMonth() !== originalDate.getMonth() ||
-        newTimestamp.getFullYear() !== originalDate.getFullYear()) {
-      return NextResponse.json(
-        { error: "La hora debe permanecer dentro del mismo día" },
-        { status: 400 }
+    if (isNaN(newTimestamp.getTime())) {
+       return NextResponse.json(
+        { error: "Error al calcular la nueva fecha" },
+        { status: 500 }
       );
     }
 

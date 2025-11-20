@@ -502,6 +502,7 @@ export default function Access() {
                         </p>
                         <p className="text-sm text-gray-500">
                           {log.employeeId} · {new Date(log.timestamp).toLocaleString('es-CO', {
+                            timeZone: 'America/Bogota',
                             dateStyle: "short",
                             timeStyle: "short",
                           })}
