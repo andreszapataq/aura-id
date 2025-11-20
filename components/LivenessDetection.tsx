@@ -115,7 +115,6 @@ export default function LivenessDetection({
   // Crear sesión al montar el componente (solo una vez)
   useEffect(() => {
     createNewSession(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     
     // Cleanup: cancelar cualquier timeout pendiente al desmontar
     return () => {
@@ -124,7 +123,8 @@ export default function LivenessDetection({
         retryTimeoutRef.current = null;
       }
     };
-  }, []); // Sin dependencias para evitar bucle infinito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Función wrapper para handlers de botón
   const handleRetryClick = () => {

@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       }
     );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     let organizationId = null;
 
     if (user) {
