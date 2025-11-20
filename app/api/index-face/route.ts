@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { indexFace, checkFaceExists, deleteFace } from '@/lib/rekognition';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 // Cliente de S3 para almacenar snapshots iniciales
 const s3Client = new S3Client({
@@ -71,6 +73,40 @@ export async function POST(request: Request) {
         error: 'Formato de solicitud inválido',
         details: { message: 'No se pudo parsear el cuerpo de la solicitud como JSON' }
       }, { status: 400 });
+    }
+
+    // Obtener organización del usuario actual
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    let organizationId = null;
+
+    if (user) {
+      const { data: profile } = await supabaseAdmin
+        .from("users")
+        .select("organization_id")
+        .eq("id", user.id)
+        .single();
+      organizationId = profile?.organization_id;
+    }
+
+    if (!organizationId) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'No autorizado', 
+        message: 'No se pudo determinar la organización del usuario.' 
+      }, { status: 403 });
     }
     
     // Extraer y validar campos requeridos
@@ -276,7 +312,8 @@ export async function POST(request: Request) {
             employee_id: employeeId,
             face_data: faceId,
             snapshot_url: snapshotUrl || null,
-            has_snapshot: hasSnapshot
+            has_snapshot: hasSnapshot,
+            organization_id: organizationId
           })
           .select('created_at') // Intentar seleccionar created_at
           .single();
