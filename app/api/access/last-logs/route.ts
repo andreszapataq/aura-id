@@ -1,8 +1,38 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export async function GET(request: Request) {
   try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabaseAdmin
+      .from("users")
+      .select("organization_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.organization_id) {
+      return NextResponse.json({ error: "Usuario sin organización" }, { status: 403 });
+    }
+
     // Obtener el parámetro limit de la URL
     const url = new URL(request.url);
     const limit = parseInt(url.searchParams.get("limit") || "5", 10);
@@ -25,6 +55,7 @@ export async function GET(request: Request) {
         )
       `)
       .order("timestamp", { ascending: false })
+      .eq("employees.organization_id", profile.organization_id)
       .limit(validLimit);
     
     if (error) {
