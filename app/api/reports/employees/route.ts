@@ -33,15 +33,11 @@ export async function GET() {
       return NextResponse.json({ error: "Usuario sin organización" }, { status: 403 });
     }
 
-    console.log("🔍 API: Obteniendo empleados para organización:", profile.organization_id);
-    
     const { data, error } = await supabaseAdmin
       .from("employees")
       .select("id, name, employee_id")
       .eq("organization_id", profile.organization_id)
       .order("name");
-
-    console.log("📊 API: Resultado empleados:", { data, error });
 
     if (error) {
       console.error("❌ API: Error al obtener empleados:", error);
@@ -51,7 +47,6 @@ export async function GET() {
       );
     }
 
-    console.log("✅ API: Empleados obtenidos:", data?.length || 0);
     return NextResponse.json({ employees: data || [] });
   } catch (error) {
     console.error("💥 API: Error inesperado:", error);

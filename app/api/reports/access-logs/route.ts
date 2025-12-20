@@ -38,10 +38,6 @@ export async function GET(request: Request) {
     const endDate = url.searchParams.get("endDate");
     const employeeId = url.searchParams.get("employeeId");
 
-    console.log("🔍 API: Obteniendo reportes para organización:", profile.organization_id);
-    console.log("📅 API: Rango de fechas:", { startDate, endDate });
-    console.log("👤 API: Empleado seleccionado:", employeeId);
-
     if (!startDate || !endDate) {
       return NextResponse.json(
         { error: "Se requieren fechas de inicio y fin" },
@@ -56,13 +52,6 @@ export async function GET(request: Request) {
     // Convertir a ISO strings para la consulta
     const startISO = startDateTime.toISOString();
     const endISO = endDateTime.toISOString();
-
-    console.log("🕐 API: Fechas convertidas:", { 
-      startISO, 
-      endISO, 
-      startLocal: startDateTime.toLocaleString("es-CO", { timeZone: "America/Bogota" }),
-      endLocal: endDateTime.toLocaleString("es-CO", { timeZone: "America/Bogota" })
-    });
 
     let query = supabaseAdmin
       .from("access_logs")
@@ -89,11 +78,7 @@ export async function GET(request: Request) {
       query = query.eq("employee_id", employeeId);
     }
 
-    console.log("🔎 API: Ejecutando consulta...");
     const { data: logs, error: logsError } = await query;
-
-    console.log("📊 API: Resultado consulta:", { logs, logsError });
-    console.log("📈 API: Cantidad de registros:", logs?.length || 0);
 
     if (logsError) {
       console.error("❌ API: Error en consulta:", logsError);
@@ -118,7 +103,6 @@ export async function GET(request: Request) {
       };
     });
 
-    console.log("✅ API: Datos procesados:", reportData.length);
     return NextResponse.json({ reports: reportData });
   } catch (error) {
     console.error("💥 API: Error inesperado:", error);
