@@ -1,15 +1,43 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-/**
- * Actualiza la hora de un registro de acceso automático
- * Solo permite editar registros que fueron generados automáticamente
- */
 export async function PATCH(request: Request) {
   try {
-    const { logId, newTime } = await request.json();
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
 
-    console.log('🔄 Solicitud de actualización de hora:', { logId, newTime });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabaseAdmin
+      .from("users")
+      .select("role, organization_id")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.role !== "admin") {
+      console.warn("⚠️ Usuario no admin intentó editar registro:", user.id);
+      return NextResponse.json(
+        { error: "No tiene permisos para realizar esta acción" },
+        { status: 403 }
+      );
+    }
+
+    const { logId, newTime } = await request.json();
 
     if (!logId || !newTime) {
       return NextResponse.json(
@@ -27,10 +55,10 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Obtener el registro actual
+    // Obtener el registro con datos del empleado para validar organización
     const { data: log, error: logError } = await supabaseAdmin
       .from("access_logs")
-      .select("*")
+      .select("*, employees!inner(organization_id)")
       .eq("id", logId)
       .single();
 
@@ -42,14 +70,18 @@ export async function PATCH(request: Request) {
       );
     }
 
-    console.log('📋 Registro encontrado:', {
-      id: log.id,
-      timestamp: log.timestamp,
-      auto_generated: log.auto_generated,
-      type: log.type
-    });
+    const employeeData = Array.isArray(log.employees) ? log.employees[0] : log.employees;
+    if (employeeData?.organization_id !== profile.organization_id) {
+      console.warn("⚠️ Admin intentó editar registro de otra organización:", {
+        adminOrg: profile.organization_id,
+        recordOrg: employeeData?.organization_id,
+      });
+      return NextResponse.json(
+        { error: "No tiene permisos para editar este registro" },
+        { status: 403 }
+      );
+    }
 
-    // VALIDACIÓN CRÍTICA: Solo permitir editar registros auto-generados
     if (!log.auto_generated) {
       console.warn('⚠️ Intento de editar registro manual:', logId);
       return NextResponse.json(
