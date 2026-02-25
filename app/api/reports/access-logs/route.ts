@@ -74,9 +74,8 @@ export async function GET(request: Request) {
     // Filtrar por organización
     query = query.eq("employees.organization_id", profile.organization_id);
 
-    // Aplicar filtro de empleado si está seleccionado
     if (employeeId && employeeId !== "all") {
-      query = query.eq("employee_id", employeeId);
+      query = query.eq("employees.id", employeeId);
     }
 
     const { data: logs, error: logsError } = await query;

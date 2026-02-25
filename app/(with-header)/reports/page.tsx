@@ -442,6 +442,239 @@ function StatCard({
   )
 }
 
+// ─── Worked Hours Calculator ────────────────────────────────────────────────
+
+interface WorkedHoursResult {
+  totalMs: number
+  totalHours: number
+  totalMinutes: number
+  dailyBreakdown: { date: string; dateRaw: Date; hours: number; minutes: number; totalMs: number }[]
+  incompletePairs: number
+  totalPairs: number
+}
+
+function calculateWorkedHours(entries: ReportEntry[]): WorkedHoursResult {
+  const sorted = [...entries].sort(
+    (a, b) =>
+      new Date(a.originalTimestamp!).getTime() -
+      new Date(b.originalTimestamp!).getTime()
+  )
+
+  const pairs: { checkIn: Date; checkOut: Date }[] = []
+  let incompletePairs = 0
+
+  let i = 0
+  while (i < sorted.length) {
+    if (sorted[i].type === "Entrada") {
+      const checkIn = new Date(sorted[i].originalTimestamp!)
+      if (i + 1 < sorted.length && sorted[i + 1].type === "Salida") {
+        const checkOut = new Date(sorted[i + 1].originalTimestamp!)
+        pairs.push({ checkIn, checkOut })
+        i += 2
+      } else {
+        incompletePairs++
+        i++
+      }
+    } else {
+      incompletePairs++
+      i++
+    }
+  }
+
+  const dailyMap = new Map<string, { dateRaw: Date; totalMs: number }>()
+  let totalMs = 0
+
+  for (const { checkIn, checkOut } of pairs) {
+    const diffMs = checkOut.getTime() - checkIn.getTime()
+    totalMs += diffMs
+
+    const dateKey = checkIn.toLocaleDateString("es-CO", {
+      timeZone: "America/Bogota",
+    })
+    const existing = dailyMap.get(dateKey)
+    if (existing) {
+      existing.totalMs += diffMs
+    } else {
+      dailyMap.set(dateKey, { dateRaw: checkIn, totalMs: diffMs })
+    }
+  }
+
+  const dailyBreakdown = Array.from(dailyMap.entries())
+    .map(([date, { dateRaw, totalMs: ms }]) => ({
+      date,
+      dateRaw,
+      hours: Math.floor(ms / 3_600_000),
+      minutes: Math.floor((ms % 3_600_000) / 60_000),
+      totalMs: ms,
+    }))
+    .sort((a, b) => a.dateRaw.getTime() - b.dateRaw.getTime())
+
+  return {
+    totalMs,
+    totalHours: Math.floor(totalMs / 3_600_000),
+    totalMinutes: Math.floor((totalMs % 3_600_000) / 60_000),
+    dailyBreakdown,
+    incompletePairs,
+    totalPairs: pairs.length,
+  }
+}
+
+// ─── Worked Hours Panel ─────────────────────────────────────────────────────
+
+function WorkedHoursPanel({ data, employeeName }: { data: WorkedHoursResult; employeeName: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const maxDailyMs = Math.max(...data.dailyBreakdown.map((d) => d.totalMs), 1)
+
+  const avgMs = data.dailyBreakdown.length > 0 ? data.totalMs / data.dailyBreakdown.length : 0
+  const avgHours = Math.floor(avgMs / 3_600_000)
+  const avgMinutes = Math.floor((avgMs % 3_600_000) / 60_000)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.12, duration: 0.35 }}
+      className="mb-8 card overflow-hidden border border-[#014F59]/8"
+    >
+      {/* Compact Header */}
+      <div className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+        {/* Left: icon + info */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#014F59] to-[#016d6d] flex items-center justify-center flex-shrink-0 shadow-sm">
+            <svg className="h-5 w-5 text-[#00DD8B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold text-gray-800">Horas Trabajadas</h3>
+              <span className="text-xs text-gray-400">&middot;</span>
+              <span className="text-sm text-gray-500 truncate">{employeeName}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-xs text-[#014F59] bg-[#014F59]/5 px-2 py-0.5 rounded-full font-medium">
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {data.dailyBreakdown.length} día{data.dailyBreakdown.length !== 1 ? "s" : ""}
+              </span>
+              {data.dailyBreakdown.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-[#00BF71] bg-[#00DD8B]/10 px-2 py-0.5 rounded-full font-medium">
+                  ~{avgHours}h {String(avgMinutes).padStart(2, "0")}m/día
+                </span>
+              )}
+              {data.incompletePairs > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01" />
+                  </svg>
+                  {data.incompletePairs} sin par
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: total + toggle */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="text-right">
+            <p className="text-2xl font-bold text-[#014F59] tracking-tight leading-none flex items-baseline gap-1">
+              <span>{data.totalHours}</span>
+              <span className="text-xs font-semibold text-[#014F59]/40">hrs</span>
+              <span>{String(data.totalMinutes).padStart(2, "0")}</span>
+              <span className="text-xs font-semibold text-[#014F59]/40">min</span>
+            </p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {data.dailyBreakdown.length} jornada{data.dailyBreakdown.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {data.dailyBreakdown.length > 0 && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-[#014F59]"
+              title={expanded ? "Ocultar desglose" : "Ver desglose diario"}
+            >
+              <motion.svg
+                animate={{ rotate: expanded ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </motion.svg>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Collapsible Daily Breakdown */}
+      <AnimatePresence initial={false}>
+        {expanded && data.dailyBreakdown.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-4 pt-1 border-t border-gray-100">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5 mt-3">
+                Desglose Diario
+              </p>
+              <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
+                {data.dailyBreakdown.map((day, idx) => {
+                  const percent = Math.max((day.totalMs / maxDailyMs) * 100, 3)
+                  const isOvertime = day.hours >= 9
+                  return (
+                    <motion.div
+                      key={day.date}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.03 * idx, duration: 0.25 }}
+                      className="flex items-center gap-3"
+                    >
+                      <span className="text-xs text-gray-500 w-20 flex-shrink-0 font-medium tabular-nums">
+                        {day.date}
+                      </span>
+                      <div className="flex-1 h-5 bg-gray-100/80 rounded overflow-hidden relative">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${percent}%` }}
+                          transition={{ delay: 0.06 + 0.03 * idx, duration: 0.4, ease: "easeOut" }}
+                          className={`h-full rounded relative ${
+                            isOvertime
+                              ? "bg-gradient-to-r from-[#014F59] to-[#016d6d]"
+                              : "bg-gradient-to-r from-[#00BF71] to-[#00DD8B]"
+                          }`}
+                        />
+                      </div>
+                      <span className={`text-xs font-semibold w-14 text-right tabular-nums ${
+                        isOvertime ? "text-[#014F59]" : "text-gray-600"
+                      }`}>
+                        {day.hours}h {String(day.minutes).padStart(2, "0")}m
+                      </span>
+                    </motion.div>
+                  )
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {data.dailyBreakdown.length === 0 && (
+        <div className="px-5 pb-4 border-t border-gray-100">
+          <p className="text-center py-4 text-sm text-gray-400">
+            No se encontraron pares entrada/salida completos
+          </p>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
 // ─── Main Reports Page ──────────────────────────────────────────────────────
 
 export default function Reports() {
@@ -551,6 +784,16 @@ export default function Reports() {
   const checkOuts = reportData.filter((e) => e.type === "Salida").length
   const autoGenerated = reportData.filter((e) => e.auto_generated).length
 
+  const selectedEmp = selectedEmployee !== "all"
+    ? employees.find((e) => String(e.id) === selectedEmployee)
+    : null
+  const selectedEmployeeName = selectedEmp?.name ?? ""
+
+  const workedHoursData = selectedEmp
+    ? reportData.filter((entry) => entry.employeeId === selectedEmp.employee_id)
+    : reportData
+  const workedHours = selectedEmp ? calculateWorkedHours(workedHoursData) : null
+
   // Pagination
   const totalPages = Math.ceil(totalEntries / recordsPerPage)
   const startIndex = (currentPage - 1) * recordsPerPage
@@ -650,7 +893,13 @@ export default function Reports() {
                 <label className="label">Empleado</label>
                 <select
                   value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setSelectedEmployee(val)
+                    if (filterApplied) {
+                      fetchReportWithParams(startDate, endDate, val)
+                    }
+                  }}
                   className="input"
                 >
                   <option value="all">Todos los empleados</option>
@@ -751,6 +1000,13 @@ export default function Reports() {
                     }
                   />
                 </div>
+
+                {/* Worked Hours Panel */}
+                <AnimatePresence>
+                  {workedHours && (
+                    <WorkedHoursPanel data={workedHours} employeeName={selectedEmployeeName} />
+                  )}
+                </AnimatePresence>
 
                 {/* Table */}
                 <div className="card overflow-hidden">
