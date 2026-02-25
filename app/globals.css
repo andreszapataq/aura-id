@@ -159,6 +159,8 @@
   
   .input {
     font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
+    -webkit-appearance: none;
+    appearance: none;
     @apply block w-full min-w-0 px-4 sm:px-5 py-3.5 rounded-lg border border-gray-300 shadow-sm
            text-gray-800 placeholder-gray-400
            focus:outline-none focus:ring-2 focus:ring-[#00BF71] focus:border-[#00BF71] focus:ring-opacity-30
