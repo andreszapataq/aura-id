@@ -57,7 +57,7 @@ export default function Header() {
             <div className="flex-shrink-0 flex items-center">
               <Link href="/" className="flex items-center">
                 <Image 
-                  src="/logo.png" 
+                  src="/logo.svg" 
                   alt="Aura ID Logo" 
                   width={32} 
                   height={32}

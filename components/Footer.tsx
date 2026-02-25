@@ -38,7 +38,7 @@ export default function Footer() {
           <div className="mt-8 md:mt-0 flex items-center justify-center md:justify-end">
             <div className="flex items-center">
               <Image 
-                src="/logo.png" 
+                src="/logo.svg" 
                 alt="Aura ID Logo" 
                 width={24} 
                 height={24}

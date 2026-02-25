@@ -885,10 +885,10 @@ export default function Reports() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="card mb-8"
+          className="card mb-8 overflow-hidden"
         >
           <form onSubmit={generateReport} className="space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 min-w-0">
               <div>
                 <label className="label">Empleado</label>
                 <select

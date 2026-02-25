@@ -133,7 +133,7 @@ function LoginForm() {
         <div className="mb-8 text-center">
           <Link href="/" className="inline-block">
             <Image 
-              src="/logo.png" 
+              src="/logo.svg" 
               alt="Aura ID Logo" 
               width={64} 
               height={64}
