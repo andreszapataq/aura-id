@@ -60,6 +60,7 @@ export async function GET(request: Request) {
         timestamp,
         type,
         auto_generated,
+        edited_by_admin,
         employee_id,
         employees!inner (
           name,
@@ -99,7 +100,8 @@ export async function GET(request: Request) {
         employeeId: employeeData ? employeeData.employee_id : "N/A",
         timestamp: log.timestamp,
         type: log.type === "check_in" ? "Entrada" : "Salida",
-        auto_generated: log.auto_generated
+        auto_generated: log.auto_generated,
+        edited_by_admin: log.edited_by_admin,
       };
     });
 

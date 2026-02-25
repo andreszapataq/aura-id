@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { motion } from 'framer-motion'
+import { useState, useEffect, useCallback, useRef } from "react"
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface ReportEntry {
-  id: number
+  id: string
   name: string
   employeeId: string
   timestamp: string
   type: string
   auto_generated: boolean
-  originalTimestamp?: string // Para mantener el timestamp original en formato ISO
+  edited_by_admin: boolean
+  originalTimestamp?: string
 }
 
 interface Employee {
@@ -20,13 +21,428 @@ interface Employee {
 }
 
 interface ReportAPIResponse {
-  id: number;
-  name: string;
-  employeeId: string;
-  timestamp: string;
-  type: string;
-  auto_generated: boolean;
+  id: string
+  name: string
+  employeeId: string
+  timestamp: string
+  type: string
+  auto_generated: boolean
+  edited_by_admin: boolean
 }
+
+interface EditHistory {
+  id: string
+  previousTimestamp: string
+  newTimestamp: string
+  reason: string
+  evidenceUrl: string | null
+  createdAt: string
+  adminName: string
+}
+
+// ─── Edit Modal ──────────────────────────────────────────────────────────────
+
+function EditModal({
+  entry,
+  onClose,
+  onSave,
+}: {
+  entry: ReportEntry
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [newTime, setNewTime] = useState("")
+  const [reason, setReason] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const reasonRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const date = new Date(entry.originalTimestamp || entry.timestamp)
+    const h = String(date.getHours()).padStart(2, "0")
+    const m = String(date.getMinutes()).padStart(2, "0")
+    setNewTime(`${h}:${m}`)
+    setTimeout(() => reasonRef.current?.focus(), 100)
+  }, [entry])
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handleEsc)
+    return () => window.removeEventListener("keydown", handleEsc)
+  }, [onClose])
+
+  const handleSave = async () => {
+    setError("")
+
+    if (!newTime) {
+      setError("Ingrese una hora válida")
+      return
+    }
+    if (!reason.trim() || reason.trim().length < 10) {
+      setError("El motivo debe tener al menos 10 caracteres")
+      reasonRef.current?.focus()
+      return
+    }
+
+    setSaving(true)
+    try {
+      const response = await fetch("/api/access/update-time", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logId: entry.id,
+          newTime,
+          reason: reason.trim(),
+        }),
+      })
+      const result = await response.json()
+
+      if (!response.ok) {
+        setError(result.error || "Error al actualizar")
+        return
+      }
+
+      onSave()
+    } catch {
+      setError("Error de conexión. Intente nuevamente.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-[#014F59] to-[#016d6d] px-6 py-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Editar Registro</h3>
+              <p className="text-sm text-white/70 mt-0.5">
+                {entry.name} &middot; {entry.type}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-white/60 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          {/* Hora actual vs nueva */}
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="label">Hora actual</label>
+              <div className="input bg-gray-100 text-gray-500 cursor-not-allowed">
+                {new Date(entry.originalTimestamp || entry.timestamp).toLocaleTimeString("es-CO", {
+                  timeZone: "America/Bogota",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
+            </div>
+            <div className="flex items-end pb-3 text-gray-400">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <label className="label">Nueva hora</label>
+              <input
+                type="time"
+                value={newTime}
+                onChange={(e) => setNewTime(e.target.value)}
+                className="input"
+                disabled={saving}
+              />
+            </div>
+          </div>
+
+          {/* Motivo */}
+          <div>
+            <label className="label">
+              Motivo de la edición <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              ref={reasonRef}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Ej: Kiosco inaccesible, empleado reportó llegada a las 8:00 AM con foto de la puerta cerrada"
+              className="input min-h-[100px] resize-none"
+              disabled={saving}
+              maxLength={500}
+            />
+            <div className="flex justify-between mt-1.5">
+              <p className="text-xs text-gray-400">Mínimo 10 caracteres</p>
+              <p className={`text-xs ${reason.length >= 10 ? "text-[#00BF71]" : "text-gray-400"}`}>
+                {reason.length}/500
+              </p>
+            </div>
+          </div>
+
+          {/* Error */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="alert alert-error flex items-start gap-2"
+              >
+                <svg className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm">{error}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-gray-100 px-6 py-4 bg-gray-50/50 flex items-center justify-between">
+          <p className="text-xs text-gray-400 max-w-[200px]">
+            Esta acción quedará registrada en el historial de auditoría
+          </p>
+          <div className="flex gap-3">
+            <button onClick={onClose} disabled={saving} className="btn btn-outline btn-sm">
+              Cancelar
+            </button>
+            <button onClick={handleSave} disabled={saving} className="btn btn-secondary btn-sm min-w-[120px]">
+              {saving ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Guardando...
+                </div>
+              ) : (
+                "Guardar cambio"
+              )}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ─── History Panel ───────────────────────────────────────────────────────────
+
+function HistoryPanel({
+  entryId,
+  entryName,
+  onClose,
+}: {
+  entryId: string
+  entryName: string
+  onClose: () => void
+}) {
+  const [history, setHistory] = useState<EditHistory[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`/api/access/edit-history?accessLogId=${entryId}`)
+        const data = await res.json()
+        if (res.ok) setHistory(data.history || [])
+      } catch { /* silently fail */ }
+      setLoading(false)
+    }
+    fetchHistory()
+  }, [entryId])
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handleEsc)
+    return () => window.removeEventListener("keydown", handleEsc)
+  }, [onClose])
+
+  const formatTimestamp = (ts: string) =>
+    new Date(ts).toLocaleString("es-CO", {
+      timeZone: "America/Bogota",
+      dateStyle: "medium",
+      timeStyle: "short",
+    })
+
+  const formatTime = (ts: string) =>
+    new Date(ts).toLocaleTimeString("es-CO", {
+      timeZone: "America/Bogota",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[80vh] flex flex-col"
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-[#014F59] to-[#016d6d] px-6 py-5 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Historial de Ediciones</h3>
+              <p className="text-sm text-white/70 mt-0.5">{entryName}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-white/60 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="h-8 w-8 animate-spin rounded-full border-3 border-[#00DD8B] border-t-transparent" />
+            </div>
+          ) : history.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <svg className="h-12 w-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm">No hay ediciones registradas</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {history.map((edit, idx) => (
+                <motion.div
+                  key={edit.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className="relative pl-6 pb-4 border-l-2 border-[#00DD8B]/30 last:border-transparent last:pb-0"
+                >
+                  {/* Timeline dot */}
+                  <div className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-[#00DD8B] ring-4 ring-[#00DD8B]/10" />
+
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-[#014F59]">{edit.adminName}</span>
+                      <span className="text-xs text-gray-400">{formatTimestamp(edit.createdAt)}</span>
+                    </div>
+
+                    {/* Time change */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="font-mono text-sm bg-red-50 text-red-600 px-2 py-0.5 rounded">
+                        {formatTime(edit.previousTimestamp)}
+                      </span>
+                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                      <span className="font-mono text-sm bg-green-50 text-green-600 px-2 py-0.5 rounded">
+                        {formatTime(edit.newTimestamp)}
+                      </span>
+                    </div>
+
+                    {/* Reason */}
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      {edit.reason}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-gray-100 px-6 py-3 bg-gray-50/50 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              {history.length} {history.length === 1 ? "edición" : "ediciones"} registradas
+            </p>
+            <button onClick={onClose} className="btn btn-outline btn-sm">
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ─── Stat Card Component ─────────────────────────────────────────────────────
+
+function StatCard({
+  label,
+  value,
+  color,
+  icon,
+}: {
+  label: string
+  value: number
+  color: "teal" | "green" | "red" | "amber"
+  icon: React.ReactNode
+}) {
+  const colors = {
+    teal: "bg-[#014F59]/5 border-[#014F59]/10 text-[#014F59]",
+    green: "bg-[#00DD8B]/10 border-[#00BF71]/20 text-[#00BF71]",
+    red: "bg-red-50 border-red-100 text-red-600",
+    amber: "bg-amber-50 border-amber-100 text-amber-600",
+  }
+  const iconBg = {
+    teal: "bg-[#014F59]",
+    green: "bg-[#00BF71]",
+    red: "bg-red-500",
+    amber: "bg-amber-500",
+  }
+
+  return (
+    <motion.div
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.15 }}
+      className={`card border ${colors[color]} transition-shadow hover:shadow-md`}
+    >
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-gray-500 text-sm font-medium">{label}</p>
+          <h3 className="text-3xl font-bold mt-1">{value}</h3>
+        </div>
+        <div className={`h-11 w-11 rounded-xl ${iconBg[color]} flex items-center justify-center shadow-sm`}>
+          {icon}
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// ─── Main Reports Page ──────────────────────────────────────────────────────
 
 export default function Reports() {
   const [startDate, setStartDate] = useState("")
@@ -36,193 +452,56 @@ export default function Reports() {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all")
   const [loading, setLoading] = useState(false)
   const [filterApplied, setFilterApplied] = useState(false)
-  
-  // Estados para edición de hora
-  const [editingLogId, setEditingLogId] = useState<number | null>(null)
-  const [editingTime, setEditingTime] = useState<string>("")
-  const [savingEdit, setSavingEdit] = useState(false)
 
-  // Estados para paginación
+  // Modal state
+  const [editingEntry, setEditingEntry] = useState<ReportEntry | null>(null)
+  const [historyEntry, setHistoryEntry] = useState<{ id: string; name: string } | null>(null)
+  const [successMessage, setSuccessMessage] = useState("")
+
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1)
   const [recordsPerPage, setRecordsPerPage] = useState(25)
 
   useEffect(() => {
-    // Establecer rango de fechas por defecto (últimos 3 meses para incluir más registros)
     const end = new Date()
     const start = new Date()
     start.setMonth(start.getMonth() - 3)
     setEndDate(end.toISOString().split("T")[0])
     setStartDate(start.toISOString().split("T")[0])
-
-    // Cargar lista de empleados
     fetchEmployees()
   }, [])
 
-  // Función para ampliar el rango de búsqueda
-  const expandDateRange = async () => {
-    // Crear fechas en zona horaria de Colombia
-    const end = new Date();
-    const start = new Date();
-    start.setFullYear(start.getFullYear() - 1); // Ampliar a 1 año
-    
-    // Formatear fechas para inputs (formato YYYY-MM-DD)
-    const newStartDate = start.toISOString().split("T")[0];
-    const newEndDate = end.toISOString().split("T")[0];
-    
-    setEndDate(newEndDate);
-    setStartDate(newStartDate);
-    
-    // Generar reporte automáticamente con el nuevo rango
-    setLoading(true)
-    setFilterApplied(true)
-    setCurrentPage(1) // Resetear paginación
-
-    try {
-      console.log("🔍 Expand: Iniciando generateReport...");
-      console.log("📅 Expand: Rango de fechas:", { startDate: newStartDate, endDate: newEndDate });
-      console.log("👤 Expand: Empleado seleccionado:", selectedEmployee);
-      
-      const params = new URLSearchParams({
-        startDate: newStartDate,
-        endDate: newEndDate,
-      });
-      
-      if (selectedEmployee !== "all") {
-        params.append("employeeId", selectedEmployee);
-      }
-      
-      const response = await fetch(`/api/reports/access-logs?${params}`);
-      const result = await response.json();
-      
-      console.log("📊 Expand: Resultado generateReport:", result);
-      
-      if (!response.ok) {
-        console.error("❌ Expand: Error en generateReport:", result.error);
-        throw new Error(result.error || "Error al generar reporte");
-      }
-      
-      console.log("✅ Expand: Reporte generado con", result.reports?.length || 0, "registros");
-      setReportData(result.reports || []);
-    } catch (error) {
-      console.error("💥 Expand: Error generating report:", error);
-      setReportData([]);
-    } finally {
-      setLoading(false);
+  // Auto-dismiss success message
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(""), 4000)
+      return () => clearTimeout(timer)
     }
-  }
+  }, [successMessage])
 
   async function fetchEmployees() {
     try {
-      console.log("🔍 Iniciando fetchEmployees...");
-      
-      const response = await fetch('/api/reports/employees');
-      const result = await response.json();
-      
-      console.log("📊 Resultado fetchEmployees:", result);
-      
-      if (!response.ok) {
-        console.error("❌ Error en fetchEmployees:", result.error);
-        throw new Error(result.error || "Error al obtener empleados");
-      }
-      
-      console.log("✅ Empleados cargados:", result.employees?.length || 0);
-      setEmployees(result.employees || []);
-    } catch (error) {
-      console.error("💥 Error fetching employees:", error);
-    }
+      const response = await fetch("/api/reports/employees")
+      const result = await response.json()
+      if (response.ok) setEmployees(result.employees || [])
+    } catch { /* silently fail */ }
   }
 
-  // Función para iniciar edición de hora
-  const startEditTime = (log: ReportEntry) => {
-    if (!log.auto_generated) return; // Solo auto-generados
-    
-    setEditingLogId(log.id);
-    // Extraer la hora del timestamp original
-    const date = new Date(log.originalTimestamp || log.timestamp);
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    setEditingTime(`${hours}:${minutes}`);
-  };
-
-  // Función para cancelar edición
-  const cancelEdit = () => {
-    setEditingLogId(null);
-    setEditingTime("");
-  };
-
-  // Función para guardar edición de hora
-  const saveEditTime = async (logId: number) => {
-    if (!editingTime) {
-      alert('Por favor, ingrese una hora válida');
-      return;
-    }
-    
-    setSavingEdit(true);
-    try {
-      const response = await fetch('/api/access/update-time', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          logId,
-          newTime: editingTime,
-        }),
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        alert(result.error || 'Error al actualizar la hora');
-        return;
-      }
-      
-      // Recargar el reporte para ver los cambios
-      const e = { preventDefault: () => {} } as React.FormEvent;
-      await generateReport(e);
-      
-      setEditingLogId(null);
-      setEditingTime("");
-      
-      alert('✅ Hora actualizada correctamente');
-    } catch (error) {
-      console.error('Error al actualizar hora:', error);
-      alert('Error al actualizar la hora. Por favor, intente nuevamente.');
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  async function generateReport(e: React.FormEvent) {
-    e.preventDefault()
+  const fetchReportWithParams = useCallback(async (start: string, end: string, empId: string) => {
     setLoading(true)
     setFilterApplied(true)
-    setCurrentPage(1) // Resetear paginación al generar nuevo reporte
+    setCurrentPage(1)
 
     try {
-      console.log("🔍 Iniciando generateReport...");
-      console.log("📅 Rango de fechas:", { startDate, endDate });
-      console.log("👤 Empleado seleccionado:", selectedEmployee);
-      
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
-        employeeId: selectedEmployee
-      });
+      const params = new URLSearchParams({ startDate: start, endDate: end })
+      if (empId !== "all") params.append("employeeId", empId)
 
-      console.log("🔎 Ejecutando consulta...");
-      const response = await fetch(`/api/reports/access-logs?${params}`);
-      const result = await response.json();
+      const response = await fetch(`/api/reports/access-logs?${params}`)
+      const result = await response.json()
 
-      console.log("📊 Resultado consulta:", result);
-      console.log("📈 Cantidad de registros:", result.reports?.length || 0);
+      if (!response.ok) throw new Error(result.error)
 
-      if (!response.ok) {
-        console.error("❌ Error en consulta:", result.error);
-        throw new Error(result.error || "Error al obtener reportes");
-      }
-
-      const reportData = result.reports.map((log: ReportAPIResponse) => ({
+      const mapped = result.reports.map((log: ReportAPIResponse) => ({
         id: log.id,
         name: log.name,
         employeeId: log.employeeId,
@@ -233,393 +512,447 @@ export default function Reports() {
         }),
         type: log.type,
         auto_generated: log.auto_generated,
-        originalTimestamp: log.timestamp // Guardar el timestamp original en formato ISO
-      }));
-
-      console.log("✅ Datos procesados:", reportData.length);
-      setReportData(reportData);
-    } catch (error) {
-      console.error("💥 Error generating report:", error);
-      alert("Error al generar el reporte. Por favor, intenta de nuevo.");
+        edited_by_admin: log.edited_by_admin,
+        originalTimestamp: log.timestamp,
+      }))
+      setReportData(mapped)
+    } catch {
+      setReportData([])
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
+  }, [])
+
+  async function generateReport(e: React.FormEvent) {
+    e.preventDefault()
+    await fetchReportWithParams(startDate, endDate, selectedEmployee)
   }
 
-  // Calcular estadísticas simples
-  const totalEntries = reportData.length;
-  const checkIns = reportData.filter(entry => entry.type === "Entrada").length;
-  const checkOuts = reportData.filter(entry => entry.type === "Salida").length;
-  const autoGenerated = reportData.filter(entry => entry.auto_generated).length;
+  const expandDateRange = async () => {
+    const end = new Date()
+    const start = new Date()
+    start.setFullYear(start.getFullYear() - 1)
+    const newStart = start.toISOString().split("T")[0]
+    const newEnd = end.toISOString().split("T")[0]
+    setStartDate(newStart)
+    setEndDate(newEnd)
+    await fetchReportWithParams(newStart, newEnd, selectedEmployee)
+  }
 
-  // Lógica de paginación
-  const totalPages = Math.ceil(totalEntries / recordsPerPage);
-  const startIndex = (currentPage - 1) * recordsPerPage;
-  const endIndex = startIndex + recordsPerPage;
-  const paginatedData = reportData.slice(startIndex, endIndex);
+  const handleEditSave = async () => {
+    setEditingEntry(null)
+    setSuccessMessage("Hora actualizada correctamente")
+    await fetchReportWithParams(startDate, endDate, selectedEmployee)
+  }
 
-  // Resetear página cuando cambian los registros por página
+  // Stats
+  const totalEntries = reportData.length
+  const checkIns = reportData.filter((e) => e.type === "Entrada").length
+  const checkOuts = reportData.filter((e) => e.type === "Salida").length
+  const autoGenerated = reportData.filter((e) => e.auto_generated).length
+
+  // Pagination
+  const totalPages = Math.ceil(totalEntries / recordsPerPage)
+  const startIndex = (currentPage - 1) * recordsPerPage
+  const endIndex = startIndex + recordsPerPage
+  const paginatedData = reportData.slice(startIndex, endIndex)
+
   const handleRecordsPerPageChange = (value: number) => {
-    setRecordsPerPage(value);
-    setCurrentPage(1);
-  };
+    setRecordsPerPage(value)
+    setCurrentPage(1)
+  }
+
+  const getStatusBadge = (entry: ReportEntry) => {
+    if (entry.edited_by_admin) {
+      return (
+        <button
+          onClick={() => setHistoryEntry({ id: entry.id, name: entry.name })}
+          className="group inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-full transition-colors cursor-pointer"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Editado
+          <svg className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )
+    }
+    if (entry.auto_generated) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+          <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Automático
+        </span>
+      )
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#00BF71] bg-[#00DD8B]/10 px-2.5 py-1 rounded-full">
+        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+        </svg>
+        Biométrico
+      </span>
+    )
+  }
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="container mx-auto px-4 py-12 max-w-7xl"
-    >
-      <div className="text-center mb-12">
-        <h1 className="text-3xl md:text-4xl font-bold mb-3 text-gray-900">Reportes de Acceso</h1>
-        <p className="text-gray-600 max-w-2xl mx-auto">
-          Genera informes detallados de entradas y salidas filtrados por fecha y empleado
-        </p>
-      </div>
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="container mx-auto px-4 py-10 max-w-7xl"
+      >
+        {/* Header */}
+        <div className="text-center mb-10">
+          <motion.h1
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-3xl md:text-4xl font-bold mb-2"
+          >
+            Reportes de Acceso
+          </motion.h1>
+          <p className="text-gray-500 max-w-xl mx-auto">
+            Consulta y gestiona los registros de entrada y salida de tu organización
+          </p>
+        </div>
 
-      <div className="card mb-8">
-        <form onSubmit={generateReport} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="label">
-                Empleado
-              </label>
-              <select
-                value={selectedEmployee}
-                onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="input"
-              >
-                <option value="all">Todos los empleados</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name} ({emp.employee_id})
-                  </option>
-                ))}
-              </select>
+        {/* Success Toast */}
+        <AnimatePresence>
+          {successMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="fixed top-6 right-6 z-40 alert alert-success flex items-center gap-3 shadow-lg"
+            >
+              <svg className="h-5 w-5 text-[#00BF71]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm font-medium">{successMessage}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Filters */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="card mb-8"
+        >
+          <form onSubmit={generateReport} className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="label">Empleado</label>
+                <select
+                  value={selectedEmployee}
+                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  className="input"
+                >
+                  <option value="all">Todos los empleados</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.employee_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Fecha Inicial</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="input"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">Fecha Final</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="input"
+                  required
+                />
+              </div>
             </div>
-            <div>
-              <label className="label">
-                Fecha Inicial
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-            <div>
-              <label className="label">
-                Fecha Final
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-          </div>
-          <div>
             <button
               type="submit"
               disabled={loading}
-              className={`btn btn-primary btn-lg w-full ${loading ? 'opacity-70' : ''}`}
+              className={`btn btn-primary btn-lg w-full ${loading ? "opacity-70" : ""}`}
             >
               {loading ? (
-                <div className="flex items-center justify-center">
-                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  Generando Reporte...
+                <div className="flex items-center justify-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#014F59] border-t-transparent" />
+                  Generando...
                 </div>
-              ) : 'Generar Reporte'}
+              ) : (
+                "Generar Reporte"
+              )}
             </button>
-          </div>
-        </form>
-      </div>
+          </form>
+        </motion.div>
 
-      {filterApplied && (
-        <>
-          {totalEntries > 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <div className="card bg-sky-50 border border-sky-100">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-gray-600 text-sm">Total de registros</p>
-                      <h3 className="text-3xl font-bold text-sky-700">{totalEntries}</h3>
-                    </div>
-                    <div className="h-12 w-12 rounded-lg bg-sky-500 flex items-center justify-center">
-                      <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+        {/* Results */}
+        {filterApplied && (
+          <>
+            {totalEntries > 0 ? (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                  <StatCard
+                    label="Total registros"
+                    value={totalEntries}
+                    color="teal"
+                    icon={
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="card bg-green-50 border border-green-100">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-gray-600 text-sm">Entradas</p>
-                      <h3 className="text-3xl font-bold text-green-700">{checkIns}</h3>
-                    </div>
-                    <div className="h-12 w-12 rounded-lg bg-green-500 flex items-center justify-center">
-                      <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+                    }
+                  />
+                  <StatCard
+                    label="Entradas"
+                    value={checkIns}
+                    color="green"
+                    icon={
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                       </svg>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="card bg-red-50 border border-red-100">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-gray-600 text-sm">Salidas</p>
-                      <h3 className="text-3xl font-bold text-red-700">{checkOuts}</h3>
-                    </div>
-                    <div className="h-12 w-12 rounded-lg bg-red-500 flex items-center justify-center">
-                      <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                    }
+                  />
+                  <StatCard
+                    label="Salidas"
+                    value={checkOuts}
+                    color="red"
+                    icon={
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                       </svg>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="card bg-amber-50 border border-amber-100">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-gray-600 text-sm">Auto-generados</p>
-                      <h3 className="text-3xl font-bold text-amber-700">{autoGenerated}</h3>
-                    </div>
-                    <div className="h-12 w-12 rounded-lg bg-amber-500 flex items-center justify-center">
-                      <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    }
+                  />
+                  <StatCard
+                    label="Automáticos"
+                    value={autoGenerated}
+                    color="amber"
+                    icon={
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                    </div>
-                  </div>
+                    }
+                  />
                 </div>
-              </div>
 
-              <div className="card overflow-hidden">
-                <div className="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-gray-800">Registros de Acceso</h2>
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm text-gray-600">Mostrar:</label>
-                    <select
-                      value={recordsPerPage}
-                      onChange={(e) => handleRecordsPerPageChange(Number(e.target.value))}
-                      className="input py-1.5 px-3 text-sm w-auto"
-                    >
-                      <option value={25}>25 registros</option>
-                      <option value={50}>50 registros</option>
-                      <option value={100}>100 registros</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Nombre
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          ID Empleado
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Fecha y Hora
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Tipo
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Estado
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {paginatedData.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {entry.name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {entry.employeeId}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">
-                            {editingLogId === entry.id ? (
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="time"
-                                  value={editingTime}
-                                  onChange={(e) => setEditingTime(e.target.value)}
-                                  className="input input-sm max-w-[120px] border border-gray-300 rounded px-2 py-1"
-                                  disabled={savingEdit}
-                                />
-                                <button
-                                  onClick={() => saveEditTime(entry.id)}
-                                  disabled={savingEdit}
-                                  className="text-green-600 hover:text-green-800 p-1 disabled:opacity-50"
-                                  title="Guardar"
-                                >
-                                  {savingEdit ? '...' : '✓'}
-                                </button>
-                                <button
-                                  onClick={cancelEdit}
-                                  disabled={savingEdit}
-                                  className="text-gray-600 hover:text-gray-800 p-1 disabled:opacity-50"
-                                  title="Cancelar"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center space-x-2">
-                                <span className="whitespace-nowrap">{entry.timestamp}</span>
-                                {entry.auto_generated && (
-                                  <button
-                                    onClick={() => startEditTime(entry)}
-                                    className="text-blue-500 hover:text-blue-700 opacity-70 hover:opacity-100 transition-opacity"
-                                    title="Editar hora del registro automático"
-                                  >
-                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-medium rounded-full ${
-                              entry.type === "Entrada" 
-                                ? "bg-green-100 text-green-800" 
-                                : "bg-red-100 text-red-800"
-                            }`}>
-                              {entry.type}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {entry.auto_generated ? (
-                              <span className="flex items-center text-xs text-amber-700">
-                                <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                                Auto-generado
-                              </span>
-                            ) : (
-                              <span className="flex items-center text-xs text-green-700">
-                                <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                                </svg>
-                                Manual
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {/* Controles de paginación */}
-                {totalPages > 1 && (
-                  <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-sm text-gray-600">
-                      Mostrando {startIndex + 1} - {Math.min(endIndex, totalEntries)} de {totalEntries} registros
-                    </div>
+                {/* Table */}
+                <div className="card overflow-hidden">
+                  <div className="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <h2 className="text-lg font-semibold text-gray-800">Registros de Acceso</h2>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setCurrentPage(1)}
-                        disabled={currentPage === 1}
-                        className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Primera página"
+                      <label className="text-sm text-gray-500">Mostrar:</label>
+                      <select
+                        value={recordsPerPage}
+                        onChange={(e) => handleRecordsPerPageChange(Number(e.target.value))}
+                        className="input py-1.5 px-3 text-sm w-auto"
                       >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
-                        className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Página anterior"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </button>
-                      
-                      <div className="flex items-center gap-1 px-2">
-                        <span className="text-sm text-gray-600">Página</span>
-                        <select
-                          value={currentPage}
-                          onChange={(e) => setCurrentPage(Number(e.target.value))}
-                          className="input py-1 px-2 text-sm w-auto"
-                        >
-                          {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                            <option key={page} value={page}>{page}</option>
-                          ))}
-                        </select>
-                        <span className="text-sm text-gray-600">de {totalPages}</span>
-                      </div>
-                      
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
-                        className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Página siguiente"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setCurrentPage(totalPages)}
-                        disabled={currentPage === totalPages}
-                        className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Última página"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                        </svg>
-                      </button>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
                     </div>
                   </div>
-                )}
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="card bg-gray-50 text-center p-8"
-            >
-              <div className="flex flex-col items-center justify-center text-gray-500 py-6">
-                <svg className="h-16 w-16 mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
-                </svg>
-                <h3 className="text-lg font-medium mb-1">No se encontraron registros</h3>
-                <p className="text-gray-500 mb-6">
-                  No hay datos de acceso para los criterios seleccionados. Prueba con un rango de fechas más amplio o un empleado diferente.
-                </p>
-                <button
-                  type="button"
-                  onClick={expandDateRange}
-                  className="btn btn-outline"
-                >
-                  Ampliar rango de búsqueda
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </>
-      )}
-    </motion.div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50/80">
+                        <tr>
+                          <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Empleado
+                          </th>
+                          <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Fecha y Hora
+                          </th>
+                          <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Tipo
+                          </th>
+                          <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Estado
+                          </th>
+                          <th className="px-6 py-3.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Acciones
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {paginatedData.map((entry, idx) => (
+                          <motion.tr
+                            key={entry.id}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: idx * 0.02 }}
+                            className="hover:bg-[#00DD8B]/[0.03] transition-colors group"
+                          >
+                            <td className="px-6 py-4">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{entry.name}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">{entry.employeeId}</p>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {entry.timestamp}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full ${
+                                  entry.type === "Entrada"
+                                    ? "bg-[#00DD8B]/10 text-[#00BF71]"
+                                    : "bg-red-50 text-red-600"
+                                }`}
+                              >
+                                <span className={`h-1.5 w-1.5 rounded-full ${
+                                  entry.type === "Entrada" ? "bg-[#00BF71]" : "bg-red-500"
+                                }`} />
+                                {entry.type}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {getStatusBadge(entry)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <button
+                                onClick={() => setEditingEntry(entry)}
+                                className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-[#014F59] opacity-0 group-hover:opacity-100 transition-all px-2.5 py-1.5 rounded-lg hover:bg-[#014F59]/5"
+                                title="Editar hora"
+                              >
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Editar
+                              </button>
+                            </td>
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div className="bg-gray-50/80 px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <p className="text-sm text-gray-500">
+                        Mostrando{" "}
+                        <span className="font-medium text-gray-700">{startIndex + 1}</span> -{" "}
+                        <span className="font-medium text-gray-700">{Math.min(endIndex, totalEntries)}</span>{" "}
+                        de <span className="font-medium text-gray-700">{totalEntries}</span>
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setCurrentPage(1)}
+                          disabled={currentPage === 1}
+                          className="p-2 rounded-lg border border-gray-200 hover:bg-white hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                          disabled={currentPage === 1}
+                          className="p-2 rounded-lg border border-gray-200 hover:bg-white hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+
+                        <div className="flex items-center gap-1 px-2">
+                          <select
+                            value={currentPage}
+                            onChange={(e) => setCurrentPage(Number(e.target.value))}
+                            className="input py-1 px-2 text-sm w-auto"
+                          >
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+                          <span className="text-sm text-gray-500">de {totalPages}</span>
+                        </div>
+
+                        <button
+                          onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                          disabled={currentPage === totalPages}
+                          className="p-2 rounded-lg border border-gray-200 hover:bg-white hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setCurrentPage(totalPages)}
+                          disabled={currentPage === totalPages}
+                          className="p-2 rounded-lg border border-gray-200 hover:bg-white hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="card bg-gray-50/50 text-center p-10"
+              >
+                <div className="flex flex-col items-center justify-center text-gray-400 py-6">
+                  <svg className="h-16 w-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  </svg>
+                  <h3 className="text-lg font-semibold text-gray-600 mb-1">Sin resultados</h3>
+                  <p className="text-gray-400 mb-6 max-w-md">
+                    No hay registros de acceso para los filtros seleccionados. Intenta ampliar el rango de fechas.
+                  </p>
+                  <button type="button" onClick={expandDateRange} className="btn btn-outline">
+                    Ampliar a 1 año
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </>
+        )}
+      </motion.div>
+
+      {/* Modals */}
+      <AnimatePresence>
+        {editingEntry && (
+          <EditModal
+            entry={editingEntry}
+            onClose={() => setEditingEntry(null)}
+            onSave={handleEditSave}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {historyEntry && (
+          <HistoryPanel
+            entryId={historyEntry.id}
+            entryName={historyEntry.name}
+            onClose={() => setHistoryEntry(null)}
+          />
+        )}
+      </AnimatePresence>
+    </>
   )
 }

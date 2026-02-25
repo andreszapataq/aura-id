@@ -25,19 +25,18 @@ export async function PATCH(request: Request) {
 
     const { data: profile } = await supabaseAdmin
       .from("users")
-      .select("role, organization_id")
+      .select("role, organization_id, full_name")
       .eq("id", user.id)
       .single();
 
     if (profile?.role !== "admin") {
-      console.warn("⚠️ Usuario no admin intentó editar registro:", user.id);
       return NextResponse.json(
         { error: "No tiene permisos para realizar esta acción" },
         { status: 403 }
       );
     }
 
-    const { logId, newTime } = await request.json();
+    const { logId, newTime, reason } = await request.json();
 
     if (!logId || !newTime) {
       return NextResponse.json(
@@ -46,7 +45,13 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Validar formato de hora (HH:MM)
+    if (!reason || reason.trim().length < 10) {
+      return NextResponse.json(
+        { error: "Se requiere un motivo de al menos 10 caracteres" },
+        { status: 400 }
+      );
+    }
+
     const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
     if (!timeRegex.test(newTime)) {
       return NextResponse.json(
@@ -55,7 +60,6 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Obtener el registro con datos del empleado para validar organización
     const { data: log, error: logError } = await supabaseAdmin
       .from("access_logs")
       .select("*, employees!inner(organization_id)")
@@ -63,7 +67,6 @@ export async function PATCH(request: Request) {
       .single();
 
     if (logError || !log) {
-      console.error('❌ No se encontró el registro:', logError);
       return NextResponse.json(
         { error: "No se encontró el registro" },
         { status: 404 }
@@ -72,92 +75,85 @@ export async function PATCH(request: Request) {
 
     const employeeData = Array.isArray(log.employees) ? log.employees[0] : log.employees;
     if (employeeData?.organization_id !== profile.organization_id) {
-      console.warn("⚠️ Admin intentó editar registro de otra organización:", {
-        adminOrg: profile.organization_id,
-        recordOrg: employeeData?.organization_id,
-      });
       return NextResponse.json(
         { error: "No tiene permisos para editar este registro" },
         { status: 403 }
       );
     }
 
-    if (!log.auto_generated) {
-      console.warn('⚠️ Intento de editar registro manual:', logId);
-      return NextResponse.json(
-        { error: "Solo se pueden editar registros generados automáticamente" },
-        { status: 403 }
-      );
-    }
-
-    // Parsear la hora proporcionada
     const [hours, minutes] = newTime.split(":").map(Number);
     const pad = (n: number) => n.toString().padStart(2, '0');
 
-    // Determinar la fecha original en hora de Colombia
     const timeZone = "America/Bogota";
     const originalDate = new Date(log.timestamp);
-    
-    // Usar Intl para obtener YYYY-MM-DD en hora de Colombia de forma segura
-    const bogotaFormatter = new Intl.DateTimeFormat("en-CA", {
-       timeZone,
-       year: "numeric",
-       month: "2-digit",
-       day: "2-digit"
-    });
-    
-    const bogotaDateStr = bogotaFormatter.format(originalDate);
 
-    // Construir la nueva fecha usando la fecha de Colombia (YYYY-MM-DD) y la nueva hora, con offset fijo -05:00
+    const bogotaFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+
+    const bogotaDateStr = bogotaFormatter.format(originalDate);
     const newTimestampStr = `${bogotaDateStr}T${pad(hours)}:${pad(minutes)}:00-05:00`;
     const newTimestamp = new Date(newTimestampStr);
-    
-    console.log('⏰ Nueva fecha calculada (Colombia):', {
-      originalUTC: originalDate.toISOString(),
-      bogotaDate: bogotaDateStr,
-      nuevaUTC: newTimestamp.toISOString(),
-      horaNueva: `${hours}:${minutes}`
-    });
 
     if (isNaN(newTimestamp.getTime())) {
-       return NextResponse.json(
+      return NextResponse.json(
         { error: "Error al calcular la nueva fecha" },
         { status: 500 }
       );
     }
 
-    // Actualizar el registro
+    // Insertar en tabla de auditoría ANTES de modificar el registro
+    const { error: auditError } = await supabaseAdmin
+      .from("access_log_edits")
+      .insert({
+        access_log_id: logId,
+        admin_user_id: user.id,
+        previous_timestamp: originalDate.toISOString(),
+        new_timestamp: newTimestamp.toISOString(),
+        reason: reason.trim(),
+      });
+
+    if (auditError) {
+      console.error("Error al crear registro de auditoría:", auditError);
+      return NextResponse.json(
+        { error: "Error al registrar la auditoría del cambio" },
+        { status: 500 }
+      );
+    }
+
     const { error: updateError } = await supabaseAdmin
       .from("access_logs")
       .update({
         timestamp: newTimestamp.toISOString(),
         edited_by_admin: true,
-        edited_at: new Date().toISOString()
+        edited_at: new Date().toISOString(),
+        edited_by: user.id,
       })
       .eq("id", logId);
 
     if (updateError) {
-      console.error("❌ Error al actualizar registro:", updateError);
+      console.error("Error al actualizar registro:", updateError);
       return NextResponse.json(
         { error: "Error al actualizar el registro en la base de datos" },
         { status: 500 }
       );
     }
 
-    console.log(`✅ Registro ${logId} actualizado exitosamente a ${newTime}`);
-
     return NextResponse.json({
       success: true,
       message: "Hora actualizada correctamente",
       newTimestamp: newTimestamp.toISOString(),
-      originalTimestamp: originalDate.toISOString()
+      originalTimestamp: originalDate.toISOString(),
+      editedBy: profile.full_name || user.email,
     });
   } catch (error) {
-    console.error("💥 Error en actualización de hora:", error);
+    console.error("Error en actualización de hora:", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }
     );
   }
 }
-
