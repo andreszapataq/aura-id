@@ -507,7 +507,7 @@ function calculateWorkedHours(entries: ReportEntry[]): WorkedHoursResult {
       minutes: Math.floor((ms % 3_600_000) / 60_000),
       totalMs: ms,
     }))
-    .sort((a, b) => a.dateRaw.getTime() - b.dateRaw.getTime())
+    .sort((a, b) => b.dateRaw.getTime() - a.dateRaw.getTime())
 
   return {
     totalMs,
