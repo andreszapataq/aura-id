@@ -22,6 +22,89 @@ try {
   logger.error('Error al configurar AWS Amplify:', error);
 }
 
+/** Texto de ayuda cuando el navegador o el SDK no pueden usar la cámara (permisos, hardware, monitor externo, etc.). */
+const CAMERA_ACCESS_HELP_ES = [
+  'No se pudo acceder a la cámara para la verificación facial.',
+  '',
+  'Qué revisar:',
+  '• Permita el acceso a la cámara en el icono del candado o «Información del sitio» junto a la barra de direcciones.',
+  '• Cierre otras apps o pestañas que usen la cámara (Zoom, Meet, Teams, etc.).',
+  '• Si usa monitor o cámara externa, pruebe la cámara integrada del equipo o desconecte el monitor y vuelva a intentarlo.',
+  '• En escritorio, puede probar desde el teléfono con el mismo sitio.',
+  '',
+  'Pulse «Intentar nuevamente» cuando haya corregido el problema.',
+].join('\n');
+
+/**
+ * Extrae state y un JSON legible del error del SDK Amplify Liveness
+ * (a menudo `[object Object]` con datos en propiedades no enumerables).
+ */
+function inspectLivenessSdkError(error: unknown): {
+  serialized: string;
+  state?: string;
+  message: string;
+} {
+  if (error instanceof Error) {
+    const err = error as Error & { state?: string };
+    const state = typeof err.state === 'string' ? err.state : undefined;
+    const serialized = JSON.stringify(
+      { name: err.name, message: err.message, state },
+      null,
+      0
+    );
+    return {
+      serialized,
+      state,
+      message: err.message || state || serialized,
+    };
+  }
+  if (error !== null && typeof error === 'object') {
+    const o = error as Record<string, unknown>;
+    let state = typeof o.state === 'string' ? o.state : undefined;
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(error, Object.getOwnPropertyNames(error as object));
+    } catch {
+      serialized = String(error);
+    }
+    if (!state && serialized.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(serialized) as { state?: string };
+        if (typeof parsed.state === 'string') state = parsed.state;
+      } catch {
+        /* ignore */
+      }
+    }
+    const message =
+      (typeof o.message === 'string' && o.message) ||
+      state ||
+      serialized ||
+      'Error desconocido (objeto)';
+    return { serialized, state, message };
+  }
+  const serialized = String(error);
+  return { serialized, message: serialized };
+}
+
+function isCameraRelatedLivenessError(state: string | undefined, combined: string): boolean {
+  if (!state && !combined) return false;
+  const cameraStates = [
+    'CAMERA_ACCESS_ERROR',
+    'CAMERA_MINIMUM_SPECIFICATIONS',
+    'CAMERA_NOT_FOUND',
+  ];
+  if (state && cameraStates.includes(state)) return true;
+  return (
+    combined.includes('CAMERA_ACCESS_ERROR') ||
+    combined.includes('CAMERA_MINIMUM') ||
+    combined.includes('CAMERA_NOT_FOUND') ||
+    combined.includes('NotReadableError') ||
+    combined.includes('NotAllowedError') ||
+    combined.includes('Permission denied') ||
+    combined.includes('PermissionDeniedError')
+  );
+}
+
 interface LivenessDetectionProps {
   onSuccess: (referenceImage: string, sessionId: string) => void;
   onError: (error: Error) => void;
@@ -378,7 +461,7 @@ export default function LivenessDetection({
   if (error && sessionUrl) {
     return (
       <div className="text-center p-4 bg-yellow-100 text-yellow-800 rounded-lg">
-        <p className="mb-3">{error}</p>
+        <p className="mb-3 whitespace-pre-line text-left">{error}</p>
         <a 
           href={sessionUrl}
           target="_blank"
@@ -401,7 +484,7 @@ export default function LivenessDetection({
   if (error) {
     return (
       <div className="text-center p-4 bg-red-100 text-red-800 rounded-lg">
-        <p>{error}</p>
+        <p className="whitespace-pre-line text-left">{error}</p>
         <button 
           onClick={handleRetryClick}
           className="mt-3 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -455,54 +538,91 @@ export default function LivenessDetection({
           return Promise.resolve(handleAnalysisComplete({ sessionId: sessionId || '' }));
         }}
         onError={(error) => {
-          // Intentar extraer información útil del error
           let errorMessage = 'Desconocido';
           let shouldRetry = false;
           let isTimeout = false;
-          
+
+          const inspected = inspectLivenessSdkError(error);
+          const combined = `${inspected.message} ${inspected.serialized} ${inspected.state ?? ''}`;
+          logger.log('Liveness onError (SDK):', { ...inspected });
+
+          let cameraRelated = false;
           try {
             const errorObj = typeof error === 'object' && error ? error : {};
             const errorStr = String(error);
-            
-            // Verificar si es TIMEOUT de múltiples formas
-            isTimeout = (
-              ('state' in errorObj && (errorObj as { state?: string }).state === 'TIMEOUT') ||
-              errorStr.includes('TIMEOUT') ||
-              errorStr.includes('timeout') ||
-              errorStr.includes('Timeout')
-            );
-            
-            if (isTimeout) {
-              logger.log('⏱️ TIMEOUT detectado en verificación de liveness');
+
+            let stateVal =
+              inspected.state ||
+              ('state' in errorObj ? (errorObj as { state?: string }).state : undefined);
+            if (!stateVal && inspected.serialized.startsWith('{')) {
+              try {
+                const p = JSON.parse(inspected.serialized) as { state?: string };
+                if (typeof p.state === 'string') stateVal = p.state;
+              } catch {
+                /* ignore */
+              }
+            }
+
+            cameraRelated = isCameraRelatedLivenessError(stateVal, combined);
+
+            isTimeout =
+              !cameraRelated &&
+              (stateVal === 'TIMEOUT' ||
+                combined.includes('TIMEOUT') ||
+                errorStr.includes('timeout') ||
+                errorStr.includes('Timeout') ||
+                inspected.message.toLowerCase().includes('tiempo'));
+
+            if (cameraRelated) {
+              // Caso esperado (permisos, hardware, otro proceso usando la cámara): no usar logger.error
+              // para no confundir con fallos del servidor; en prod console.error no aplica (warn solo en dev).
+              logger.warn(
+                'Liveness: cámara no disponible (SDK). State:',
+                stateVal ?? '(sin state)',
+                inspected.serialized
+              );
+              errorMessage = CAMERA_ACCESS_HELP_ES;
+              shouldRetry = false;
+              isTimeout = false;
+            } else if (isTimeout) {
+              logger.log('⏱️ TIMEOUT en verificación de liveness');
               errorMessage = 'Tiempo agotado';
               shouldRetry = true;
-            }
-            else if (errorStr.includes('credentials') || errorStr.includes('CredentialsError')) {
-              errorMessage = 'Error de credenciales de AWS. Verifique la configuración del Identity Pool.';
-              logger.error('❌ Error de credenciales AWS:', error);
-            }
-            else if (errorStr.includes('network') || errorStr.includes('NetworkError')) {
+            } else if (
+              combined.includes('credentials') ||
+              combined.includes('CredentialsError')
+            ) {
+              errorMessage =
+                'Error de credenciales de AWS. Verifique la configuración del Identity Pool.';
+              logger.error('❌ Error de credenciales AWS:', inspected.serialized);
+            } else if (
+              combined.includes('network') ||
+              combined.includes('NetworkError')
+            ) {
               errorMessage = 'Error de conexión de red. Verifique su conexión a internet.';
               shouldRetry = true;
-            }
-            else if ('state' in errorObj && (errorObj as { state?: string }).state === 'SERVER_ERROR') {
-              logger.log('Detectado error de servidor AWS:', error);
+            } else if (stateVal === 'SERVER_ERROR') {
+              logger.log('Error de servidor AWS:', inspected.serialized);
               errorMessage = 'Error en el servidor de verificación AWS.';
               shouldRetry = true;
-            }
-            else if (errorStr.includes('region') || errorStr.includes('identity pool')) {
-              errorMessage = 'Error de configuración de AWS. Verifique las variables de entorno.';
-              logger.error('❌ Error de configuración AWS:', error);
-            }
-            // Si el error está vacío, probablemente es un timeout
-            else if (errorStr === '{}' || errorStr === '[object Object]') {
-              logger.log('⏱️ Error vacío detectado - probablemente TIMEOUT');
-              errorMessage = 'Tiempo agotado';
+            } else if (
+              combined.includes('region') ||
+              combined.includes('identity pool')
+            ) {
+              errorMessage =
+                'Error de configuración de AWS. Verifique las variables de entorno.';
+              logger.error('❌ Error de configuración AWS:', inspected.serialized);
+            } else if (errorStr === '{}' || errorStr === '[object Object]') {
+              // No asumir TIMEOUT: el SDK suele enviar objetos con state en JSON
+              logger.warn(
+                'Error poco claro del SDK (objeto). Reintento sin contar como timeout:',
+                inspected.serialized
+              );
+              errorMessage = 'Error de verificación (reintentando)';
               shouldRetry = true;
-              isTimeout = true;
-            }
-            else if (typeof error === 'object') {
-              errorMessage = JSON.stringify(error, Object.getOwnPropertyNames(error));
+              isTimeout = false;
+            } else if (typeof error === 'object') {
+              errorMessage = inspected.serialized;
             } else {
               errorMessage = errorStr;
             }
@@ -510,36 +630,33 @@ export default function LivenessDetection({
             logger.error('Error al procesar el error:', parseError);
             errorMessage = 'Error no serializable';
           }
-          
-          // Decidir si reintentar automáticamente
-          if (shouldRetry || isTimeout) {
+
+          const recoverable = shouldRetry || isTimeout;
+
+          if (recoverable) {
             logger.log('⏳ Reintentando automáticamente después de error/timeout...');
-            
-            // Mensaje específico para TIMEOUT
+
             if (isTimeout) {
-              logger.log('⏱️ TIMEOUT detectado - verificando timeouts consecutivos');
-              
-              // Verificar timeouts consecutivos
+              logger.log('⏱️ Contador de timeouts consecutivos');
               const newTimeoutCount = consecutiveTimeouts + 1;
               setConsecutiveTimeouts(newTimeoutCount);
-              
+
               if (newTimeoutCount >= MAX_CONSECUTIVE_TIMEOUTS) {
-                // Después de X timeouts, entrar en modo espera
-                logger.log(`🛑 ${newTimeoutCount} timeouts consecutivos detectados. Entrando en modo espera.`);
+                logger.log(
+                  `🛑 ${newTimeoutCount} timeouts consecutivos. Entrando en modo espera.`
+                );
                 setIsWaitingMode(true);
                 setIsLoading(false);
                 setError(null);
-                return; // NO reintentar automáticamente
+                return;
               }
-              
+
               setError('⏱️ Tiempo agotado. Preparando nueva verificación...');
             } else {
               logger.log('🔄 Error recuperable - reintentando automáticamente');
               setError('🔄 Reintentando verificación automáticamente...');
             }
-            
-            // No llamar a onError para errores recuperables - reintentar silenciosamente
-            // Cancelar cualquier reintento anterior antes de programar uno nuevo
+
             if (retryTimeoutRef.current) {
               clearTimeout(retryTimeoutRef.current);
             }
@@ -549,19 +666,35 @@ export default function LivenessDetection({
               createNewSession(0);
             }, 3000);
           } else {
-            // Solo para errores NO recuperables
-            logger.error('🔍 Error NO recuperable en la verificación de presencia:', {
-              error,
-              errorType: typeof error,
-              errorKeys: error ? Object.keys(error) : [],
-              errorMessage,
-              shouldRetry
-            });
-            
-            setError(`Error en la verificación de presencia: ${errorMessage}`);
-            onError(new Error(`Error en la verificación de presencia: ${errorMessage}`));
+            if (retryTimeoutRef.current) {
+              clearTimeout(retryTimeoutRef.current);
+              retryTimeoutRef.current = null;
+            }
+
+            if (cameraRelated) {
+              logger.log(
+                'Liveness: se muestra ayuda al usuario (cámara); no es error de servidor ni de red.'
+              );
+            } else {
+              logger.error('🔍 Error NO recuperable en la verificación de presencia:', {
+                inspected,
+                errorMessage: errorMessage.slice(0, 200),
+              });
+            }
+
+            setError(
+              cameraRelated
+                ? errorMessage
+                : `Error en la verificación de presencia: ${errorMessage}`
+            );
+            // Cámara: la ayuda ya está en este componente; no duplicar alerta en la página padre
+            if (!cameraRelated) {
+              onError(
+                new Error(`Error en la verificación de presencia: ${errorMessage}`)
+              );
+            }
           }
-          
+
           return Promise.resolve();
         }}
         onUserCancel={() => {
