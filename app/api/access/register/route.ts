@@ -4,11 +4,12 @@ import { searchFacesByImage } from "@/lib/rekognition";
 
 export async function POST(request: Request) {
   try {
-    const { imageData, type } = await request.json();
+    const { imageData, type, latitude, longitude, accuracy } = await request.json();
 
     console.log('🔍 INICIO REGISTRO DE ACCESO');
     console.log('📏 Tamaño de imagen recibida:', imageData ? imageData.length : 'no imageData');
     console.log('🎯 Tipo de registro:', type);
+    console.log('📍 Ubicación:', latitude != null && longitude != null ? `${latitude}, ${longitude} (±${accuracy}m)` : 'no disponible');
 
     if (!imageData) {
       return NextResponse.json(
@@ -20,6 +21,25 @@ export async function POST(request: Request) {
     if (!type || !["check_in", "check_out"].includes(type)) {
       return NextResponse.json(
         { error: "El tipo de registro no es válido" },
+        { status: 400 }
+      );
+    }
+
+    // La ubicación es obligatoria para registrar el acceso
+    const lat = typeof latitude === "number" && Number.isFinite(latitude) ? latitude : null;
+    const lng = typeof longitude === "number" && Number.isFinite(longitude) ? longitude : null;
+    const acc = typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null;
+
+    if (lat === null || lng === null) {
+      return NextResponse.json(
+        { error: "Se requiere acceso a la ubicación para registrar el acceso. Habilite los permisos de ubicación en su navegador." },
+        { status: 400 }
+      );
+    }
+
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return NextResponse.json(
+        { error: "Las coordenadas de ubicación no son válidas" },
         { status: 400 }
       );
     }
@@ -157,7 +177,10 @@ export async function POST(request: Request) {
         employee_id: employee.id,
         timestamp: now.toISOString(),
         type: type,
-        auto_generated: false
+        auto_generated: false,
+        latitude: lat,
+        longitude: lng,
+        accuracy: acc
       });
 
     if (logError) {

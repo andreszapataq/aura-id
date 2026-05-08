@@ -12,6 +12,9 @@ interface ReportEntry {
   auto_generated: boolean
   edited_by_admin: boolean
   originalTimestamp?: string
+  latitude: number | null
+  longitude: number | null
+  accuracy: number | null
 }
 
 interface Employee {
@@ -28,6 +31,9 @@ interface ReportAPIResponse {
   type: string
   auto_generated: boolean
   edited_by_admin: boolean
+  latitude: number | null
+  longitude: number | null
+  accuracy: number | null
 }
 
 interface EditHistory {
@@ -747,6 +753,9 @@ export default function Reports() {
         auto_generated: log.auto_generated,
         edited_by_admin: log.edited_by_admin,
         originalTimestamp: log.timestamp,
+        latitude: log.latitude,
+        longitude: log.longitude,
+        accuracy: log.accuracy,
       }))
       setReportData(mapped)
     } catch {
@@ -1042,6 +1051,9 @@ export default function Reports() {
                           <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                             Estado
                           </th>
+                          <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Ubicación
+                          </th>
                           <th className="px-6 py-3.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                             Acciones
                           </th>
@@ -1081,6 +1093,29 @@ export default function Reports() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               {getStatusBadge(entry)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {entry.latitude != null && entry.longitude != null ? (
+                                <a
+                                  href={`https://www.google.com/maps?q=${entry.latitude},${entry.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#014F59] bg-[#014F59]/5 hover:bg-[#014F59]/10 px-2.5 py-1 rounded-full transition-colors"
+                                  title={
+                                    entry.accuracy != null
+                                      ? `Precisión: ±${Math.round(entry.accuracy)} m`
+                                      : "Ver en Google Maps"
+                                  }
+                                >
+                                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  Ver mapa
+                                </a>
+                              ) : (
+                                <span className="text-xs text-gray-300">—</span>
+                              )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right">
                               <button

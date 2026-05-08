@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
 import LivenessDetection from "@/components/LivenessDetection"
 import { useAuth } from "@/contexts/AuthContext"
@@ -14,6 +14,14 @@ interface LastAccessLog {
   type: string;
 }
 
+interface LocationCoords {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+}
+
+type LocationStatus = "checking" | "prompt" | "requesting" | "granted" | "denied" | "unavailable"
+
 export default function Access() {
   const { isKiosk } = useAuth()
   const [accessType, setAccessType] = useState<AccessType>(null)
@@ -25,14 +33,73 @@ export default function Access() {
   const [lastAccessLogs, setLastAccessLogs] = useState<LastAccessLog[]>([])
   const [faceId, setFaceId] = useState<string | null>(null)
   const [isSearchingFace, setIsSearchingFace] = useState(false)
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>("checking")
+  const [coords, setCoords] = useState<LocationCoords | null>(null)
+
+  const requestLocation = useCallback(() => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationStatus("unavailable");
+      return;
+    }
+
+    setLocationStatus("requesting");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCoords({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+        setLocationStatus("granted");
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationStatus("denied");
+        } else {
+          // POSITION_UNAVAILABLE o TIMEOUT — el usuario puede reintentar
+          setLocationStatus("unavailable");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationStatus("unavailable");
+      return;
+    }
+
+    // Verificar el estado del permiso para decidir si pedir o mostrar instrucciones
+    if ("permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "geolocation" as PermissionName })
+        .then((result) => {
+          if (result.state === "granted") {
+            requestLocation();
+          } else if (result.state === "denied") {
+            setLocationStatus("denied");
+          } else {
+            setLocationStatus("prompt");
+          }
+        })
+        .catch(() => {
+          // Navegadores que no soportan permissions API — pedimos directamente
+          setLocationStatus("prompt");
+        });
+    } else {
+      setLocationStatus("prompt");
+    }
+  }, [requestLocation]);
+
+  useEffect(() => {
+    if (locationStatus !== "granted") return;
     // Iniciar la detección de presencia automáticamente
     startLivenessDetection();
-    
+
     // Cargar últimos registros de acceso
     fetchLastAccessLogs();
-  }, []);
+  }, [locationStatus]);
 
   const fetchLastAccessLogs = async () => {
     try {
@@ -211,11 +278,16 @@ export default function Access() {
       setMessage({ text: "Por favor, complete la verificación facial primero", isError: true });
       return;
     }
-    
+
+    if (!coords) {
+      setMessage({ text: "No se pudo obtener su ubicación. Habilite los permisos e intente nuevamente.", isError: true });
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
     setAccessType(type);
-    
+
     try {
       const response = await fetch("/api/access/register", {
         method: "POST",
@@ -226,6 +298,9 @@ export default function Access() {
           imageData: image,
           type: type,
           sessionId: livenessSessionId,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
         }),
       });
       
@@ -290,8 +365,18 @@ export default function Access() {
     }
   };
 
+  if (locationStatus !== "granted") {
+    return (
+      <LocationGate
+        status={locationStatus}
+        onRequest={requestLocation}
+        isKiosk={isKiosk}
+      />
+    );
+  }
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className={isKiosk ? "h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col" : "container mx-auto px-4 py-12 max-w-7xl"}
@@ -533,4 +618,209 @@ export default function Access() {
       </div>
     </motion.div>
   )
+}
+
+// ─── Location Gate ──────────────────────────────────────────────────────────
+
+function detectBrowser(): "ios-safari" | "android-chrome" | "desktop-chrome" | "firefox" | "safari" | "other" {
+  if (typeof navigator === "undefined") return "other";
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const isFirefox = /Firefox/.test(ua);
+  const isChrome = /Chrome/.test(ua) && !/Edg/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+
+  if (isIOS) return "ios-safari";
+  if (isAndroid && isChrome) return "android-chrome";
+  if (isFirefox) return "firefox";
+  if (isSafari) return "safari";
+  if (isChrome) return "desktop-chrome";
+  return "other";
+}
+
+function LocationInstructions() {
+  const browser = detectBrowser();
+
+  const instructions: Record<ReturnType<typeof detectBrowser>, { title: string; steps: string[] }> = {
+    "ios-safari": {
+      title: "En iPhone / iPad (Safari)",
+      steps: [
+        "Abra Ajustes → Privacidad y seguridad → Localización.",
+        "Asegúrese de que Localización esté activada y Safari tenga permiso.",
+        "Vuelva a Safari, pulse \"aA\" en la barra de direcciones → Ajustes del sitio web → Ubicación → Permitir.",
+        "Recargue esta página.",
+      ],
+    },
+    "android-chrome": {
+      title: "En Android (Chrome)",
+      steps: [
+        "Toque el icono de candado 🔒 a la izquierda de la barra de direcciones.",
+        "Toque Permisos → Ubicación → Permitir.",
+        "Recargue esta página.",
+      ],
+    },
+    "desktop-chrome": {
+      title: "En Chrome / Edge (Escritorio)",
+      steps: [
+        "Haga clic en el icono de candado 🔒 a la izquierda de la URL.",
+        "Cambie Ubicación a \"Permitir\".",
+        "Recargue la página.",
+      ],
+    },
+    firefox: {
+      title: "En Firefox",
+      steps: [
+        "Haga clic en el icono de candado 🔒 a la izquierda de la URL.",
+        "En \"Permisos\", elimine el bloqueo de Ubicación.",
+        "Recargue la página y permita cuando se le solicite.",
+      ],
+    },
+    safari: {
+      title: "En Safari (macOS)",
+      steps: [
+        "Menú Safari → Ajustes → Sitios web → Ubicación.",
+        "Cambie este sitio a \"Permitir\".",
+        "Recargue la página.",
+      ],
+    },
+    other: {
+      title: "En su navegador",
+      steps: [
+        "Abra la configuración del sitio (suele estar en el icono de candado de la barra de direcciones).",
+        "Cambie el permiso de Ubicación a \"Permitir\".",
+        "Recargue la página.",
+      ],
+    },
+  };
+
+  const { title, steps } = instructions[browser];
+
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-left">
+      <h4 className="text-sm font-semibold text-gray-800 mb-3">{title}</h4>
+      <ol className="space-y-2 text-sm text-gray-600 list-decimal list-inside">
+        {steps.map((step, i) => (
+          <li key={i}>{step}</li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function LocationGate({
+  status,
+  onRequest,
+  isKiosk,
+}: {
+  status: LocationStatus;
+  onRequest: () => void;
+  isKiosk: boolean;
+}) {
+  const wrapperClass = isKiosk
+    ? "h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center px-4"
+    : "container mx-auto px-4 py-12 max-w-2xl";
+
+  if (status === "checking" || status === "requesting") {
+    return (
+      <div className={wrapperClass}>
+        <div className="card text-center w-full max-w-md mx-auto">
+          <div className="flex flex-col items-center py-6">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#00DD8B] border-t-transparent mb-4" />
+            <p className="text-gray-600">
+              {status === "requesting" ? "Obteniendo su ubicación..." : "Verificando permisos..."}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "prompt") {
+    return (
+      <div className={wrapperClass}>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card text-center w-full max-w-md mx-auto"
+        >
+          <div className="bg-[#00DD8B]/10 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-5">
+            <svg className="w-10 h-10 text-[#00BF71]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Permiso de Ubicación</h2>
+          <p className="text-gray-600 mb-6">
+            Para registrar su entrada o salida, necesitamos acceder a su ubicación. Esta información queda asociada al registro como evidencia.
+          </p>
+          <button onClick={onRequest} className="btn btn-primary w-full">
+            Permitir Ubicación
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (status === "unavailable") {
+    return (
+      <div className={wrapperClass}>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card text-center w-full max-w-md mx-auto"
+        >
+          <div className="bg-amber-50 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-5">
+            <svg className="w-10 h-10 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M5.062 19h13.876c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">No se pudo obtener la ubicación</h2>
+          <p className="text-gray-600 mb-6">
+            Verifique que el GPS esté encendido y que tenga conexión. Luego intente de nuevo.
+          </p>
+          <button onClick={onRequest} className="btn btn-primary w-full">
+            Reintentar
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // status === "denied"
+  return (
+    <div className={wrapperClass}>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card w-full max-w-xl mx-auto"
+      >
+        <div className="text-center mb-6">
+          <div className="bg-red-50 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-5">
+            <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Permiso de Ubicación Bloqueado</h2>
+          <p className="text-gray-600">
+            Su navegador tiene bloqueado el acceso a la ubicación. Para continuar, debe habilitarlo manualmente desde la configuración del sitio.
+          </p>
+        </div>
+
+        <LocationInstructions />
+
+        <div className="mt-6 flex flex-col sm:flex-row gap-3">
+          <button onClick={onRequest} className="btn btn-outline flex-1">
+            Ya lo habilité, reintentar
+          </button>
+          <button
+            onClick={() => typeof window !== "undefined" && window.location.reload()}
+            className="btn btn-primary flex-1"
+          >
+            Recargar Página
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
 }

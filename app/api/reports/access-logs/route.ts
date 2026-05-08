@@ -62,6 +62,9 @@ export async function GET(request: Request) {
         auto_generated,
         edited_by_admin,
         employee_id,
+        latitude,
+        longitude,
+        accuracy,
         employees!inner (
           name,
           employee_id
@@ -101,6 +104,9 @@ export async function GET(request: Request) {
         type: log.type === "check_in" ? "Entrada" : "Salida",
         auto_generated: log.auto_generated,
         edited_by_admin: log.edited_by_admin,
+        latitude: log.latitude,
+        longitude: log.longitude,
+        accuracy: log.accuracy,
       };
     });
 
