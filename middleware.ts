@@ -110,6 +110,6 @@ export async function middleware(request: NextRequest) {
 // Especificar las rutas donde aplicar el middleware
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon.png|icon-192.png|icon-512.png|logo.svg|logo.png).*)',
   ],
 }

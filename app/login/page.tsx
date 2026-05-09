@@ -19,6 +19,10 @@ function LoginForm() {
   const [success, setSuccess] = useState<string | null>(null)
   const [passwordMatchError, setPasswordMatchError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // True desde que el sign-in se acepta hasta que el componente se desmonta por la
+  // redirección. Mantiene el spinner girando durante la transición al panel para
+  // que no haya un "salto" donde el botón vuelve a estado normal antes de navegar.
+  const [redirecting, setRedirecting] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
   
   // Obtener la URL de redirección de los parámetros de búsqueda
@@ -30,11 +34,12 @@ function LoginForm() {
   // Verificar si el usuario ya está autenticado
   useEffect(() => {
     if (user) {
-      if (redirect) {
-        router.push(decodeURIComponent(redirect))
-      } else {
-        router.push('/')
-      }
+      setRedirecting(true)
+      const target = redirect ? decodeURIComponent(redirect) : '/'
+      router.replace(target)
+      // Invalidar la Router Cache: sin esto, Next puede servir el RSC prefetcheado
+      // del destino sin sesión y obliga a un refresh manual.
+      router.refresh()
     }
   }, [user, redirect, router])
 
@@ -51,10 +56,10 @@ function LoginForm() {
     e.preventDefault()
     
     // Prevenir múltiples submits
-    if (loading) {
+    if (loading || redirecting) {
       return
     }
-    
+
     setError(null)
     setSuccess(null)
     setLoading(true)
@@ -86,6 +91,7 @@ function LoginForm() {
         setFullName("")
         setOrganizationName("")
         setEmail("") // Limpiar email también
+        setLoading(false)
       } else {
         // Iniciar sesión
         const { error: signInError } = await signIn(email, password)
@@ -94,7 +100,11 @@ function LoginForm() {
           throw new Error(signInError.message || "Error al iniciar sesión")
         }
 
-        // Si la autenticación es exitosa, el efecto se encargará de redirigir
+        // Sign-in exitoso: NO apagamos el spinner aquí. El listener de auth setea
+        // `user`, el useEffect dispara router.replace al panel y este componente se
+        // desmonta. Mantener el spinner cubre la ventana entre la respuesta de
+        // Supabase y el commit de la navegación, para que el botón no parpadee.
+        setRedirecting(true)
       }
     } catch (error) {
       // Verifica si es un error y si el mensaje es el de credenciales inválidas
@@ -107,8 +117,8 @@ function LoginForm() {
         // Para errores que no son instancias de Error
         setError("Ocurrió un error inesperado.");
       }
-    } finally {
       setLoading(false)
+      setRedirecting(false)
     }
   }
 
@@ -249,10 +259,10 @@ function LoginForm() {
             <div>
               <button
                 type="submit"
-                disabled={loading || (isRegistering && passwordMatchError !== null)}
+                disabled={loading || redirecting || (isRegistering && passwordMatchError !== null)}
                 className="btn btn-primary w-full"
               >
-                {loading ? (
+                {(loading || redirecting) ? (
                   <div className="flex items-center justify-center">
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                     {isRegistering ? 'Creando cuenta...' : 'Iniciando sesión...'}

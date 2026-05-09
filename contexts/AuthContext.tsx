@@ -105,51 +105,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Cargar sesión de usuario al inicio y suscribirse a cambios
   useEffect(() => {
-    setLoading(true); // Empieza cargando
-    const getSessionAndSubscribe = async () => {
-      // Usar getUser() para validar contra el servidor y evitar warnings de autenticidad
-      const { data: { user } } = await supabase.auth.getUser();
-      const sessionLike = user ? { user } as unknown as Session : null;
+    let isMounted = true;
+    setLoading(true);
+
+    // Validación inicial contra el servidor (una sola vez, en el montaje)
+    const init = async () => {
+      const { data: { user: initialUser } } = await supabase.auth.getUser();
+      if (!isMounted) return;
+
+      const sessionLike = initialUser ? ({ user: initialUser } as unknown as Session) : null;
       setSession(sessionLike);
-      setUser(user ?? null);
-      
-      // Cargar perfil si hay usuario
-      if (session?.user) {
-        await loadUserProfile(session.user.id);
+      setUser(initialUser ?? null);
+
+      if (initialUser) {
+        await loadUserProfile(initialUser.id);
       }
-      
-      setLoading(false); // Termina la carga inicial
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (_event) => {
-          // En cada cambio, consultar al servidor el usuario actual
-          const { data: { user: currentUser } } = await supabase.auth.getUser();
-          const newSession = currentUser ? { user: currentUser } as unknown as Session : null;
-          setSession(newSession);
-          setUser(currentUser ?? null);
-          
-          // Cargar perfil si hay usuario
-          if (currentUser) {
-            await loadUserProfile(currentUser.id);
-          } else {
-            // Limpiar perfil si no hay usuario
-            setUserProfile(null);
-            setIsAdmin(false);
-            setIsKiosk(false);
-            setCanLogout(true);
-          }
-          
-          setLoading(false); // Actualiza estado de carga en cambios
+      if (isMounted) setLoading(false);
+    };
+
+    init();
+
+    // En cambios de auth confiamos en la sesión que entrega el SDK (ya validada por el
+    // servidor de auth). Evitamos un getUser() extra por cada evento, que añadía latencia
+    // visible en signIn/signOut.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        if (!isMounted) return;
+
+        const newUser = newSession?.user ?? null;
+        setSession(newSession ?? null);
+        setUser(newUser);
+
+        if (newUser) {
+          await loadUserProfile(newUser.id);
+        } else {
+          setUserProfile(null);
+          setIsAdmin(false);
+          setIsKiosk(false);
+          setCanLogout(true);
         }
-      );
 
-      // Limpiar suscripción al desmontar el componente
-      return () => {
-        subscription.unsubscribe();
-      };
-    }
+        if (isMounted) setLoading(false);
+      }
+    );
 
-    getSessionAndSubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []) // Se ejecuta solo una vez al montar el componente
 
   // Función para iniciar sesión
@@ -226,24 +230,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setLoading(true);
+
+    // Limpiar estado local de inmediato para que la UI deje de mostrar al usuario
+    // autenticado aunque la red tarde. El listener onAuthStateChange terminará de
+    // sincronizar session/user.
+    setUserProfile(null);
+    setIsAdmin(false);
+    setIsKiosk(false);
+    setCanLogout(true);
+    setUser(null);
+    setSession(null);
+
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-         logger.error('Error durante el cierre de sesión:', error);
-      } else {
-          // Limpiar estado local
-          setUserProfile(null);
-          setIsAdmin(false);
-          setIsKiosk(false);
-          setCanLogout(true);
-          
-          // El listener onAuthStateChange actualizará session y user a null
-          router.push('/login'); // Redirigir al login después de cerrar sesión
-      }
+      // scope: 'local' invalida solo la sesión de este dispositivo (sin round-trip
+      // al endpoint /auth/v1/logout global). Es más rápido y evita que un timeout
+      // del servidor deje al botón en "Cerrando…".
+      await supabase.auth.signOut({ scope: 'local' });
     } catch (error) {
       logger.error('Excepción durante el cierre de sesión:', error);
-    } finally {
-       setLoading(false);
+    }
+
+    // Hard navigation a /login: garantiza que se descarte cualquier RSC en caché,
+    // se desmonte el Header (limpiando isLoggingOut) y el middleware corra con las
+    // cookies recién limpiadas. Eliminamos así el race que dejaba "Cerrando…" pegado.
+    if (typeof window !== 'undefined') {
+      window.location.replace('/login');
+    } else {
+      router.replace('/login');
+      router.refresh();
     }
   };
 
