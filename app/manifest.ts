@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Aura ID - Control de Acceso",
     short_name: "Aura ID",
     description: "Sistema de control de acceso con reconocimiento facial",
-    start_url: "/access",
+    start_url: "/",
     display: "standalone",
     orientation: "portrait",
     background_color: "#ffffff",
