@@ -29,19 +29,23 @@ function LoginForm() {
   const redirect = searchParams.get('redirect')
   
   // Usar el contexto de autenticación
-  const { signIn, signUp, user } = useAuth()
-  
+  const { signIn, signUp, user, userProfile, isAdmin } = useAuth()
+
   // Verificar si el usuario ya está autenticado
   useEffect(() => {
-    if (user) {
-      setRedirecting(true)
-      const target = redirect ? decodeURIComponent(redirect) : '/'
-      router.replace(target)
-      // Invalidar la Router Cache: sin esto, Next puede servir el RSC prefetcheado
-      // del destino sin sesión y obliga a un refresh manual.
-      router.refresh()
-    }
-  }, [user, redirect, router])
+    if (!user) return
+    // Esperar a que el perfil cargue para decidir el destino según el rol
+    if (!userProfile) return
+
+    setRedirecting(true)
+    const decoded = redirect ? decodeURIComponent(redirect) : null
+    // Admin nunca debe aterrizar en /access automáticamente: va a Inicio
+    const target = isAdmin && (!decoded || decoded === '/access') ? '/' : (decoded || '/')
+    router.replace(target)
+    // Invalidar la Router Cache: sin esto, Next puede servir el RSC prefetcheado
+    // del destino sin sesión y obliga a un refresh manual.
+    router.refresh()
+  }, [user, userProfile, isAdmin, redirect, router])
 
   // Efecto para validar coincidencia de contraseñas en tiempo real
   useEffect(() => {
